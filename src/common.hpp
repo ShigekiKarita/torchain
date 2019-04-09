@@ -43,10 +43,12 @@ namespace common {
     at::Tensor make_tensor_impl(std::shared_ptr<Matrix> ptr) {
         constexpr auto s = ScalarTypeof<Elem>::value;
         auto deleter = [ptr](void*) mutable { ptr.reset(); };
-        auto t = at::getType(device, s).tensorFromBlob(ptr->Data(),
-                                                       {ptr->NumRows(), ptr->NumCols()},
-                                                       {ptr->Stride(), 1},
-                                                       deleter);
+        auto opt = at::TensorOptions().device(device).dtype(s);
+        auto t = at::from_blob(ptr->Data(),
+                               {ptr->NumRows(), ptr->NumCols()},
+                               {ptr->Stride(), 1},
+                               deleter,
+                               opt);
         return t;
     }
 
@@ -68,11 +70,14 @@ namespace common {
         constexpr bool is_cpu = std::is_base_of<kaldi::MatrixBase<Elem>, Matrix>::value;
         constexpr bool is_cuda = std::is_base_of<kaldi::CuMatrixBase<Elem>, Matrix>::value;
         static_assert(is_cpu || is_cuda, "type Matrix should be derived from kaldi::MatrixBase or kaldi::CuMatrixBase");
-        constexpr auto b = is_cpu ? at::kCPU : at::kCUDA;
-        return at::getType(b, s).tensorFromBlob(
+        constexpr auto device = is_cpu ? at::kCPU : at::kCUDA;
+        auto opt = at::TensorOptions().device(device).dtype(s);
+        return at::from_blob(
             m.Data(),
             {m.NumRows(), m.NumCols()},
-            {m.Stride(), 1});
+            {m.Stride(), 1},
+            [](void*) {},
+            opt);
     }
 
     // WARNING: this matrix does not own at::Tensor
@@ -83,11 +88,11 @@ namespace common {
         constexpr bool is_cpu = std::is_same<Matrix, kaldi::SubMatrix<Elem>>::value;
         constexpr bool is_cuda = std::is_same<Matrix, kaldi::CuSubMatrix<Elem>>::value;
         static_assert(is_cpu || is_cuda, "type Matrix should be kaldi::SubMatrix or kaldi::CuSubMatrix");
-        if (is_cpu && t.type().backend() != at::kCPU) {
-            t = t.toBackend(at::kCPU);
+        if (is_cpu && t.device() != at::kCPU) {
+            t = t.toBackend(at::Backend::CPU);
         }
-        if (is_cuda && t.type().backend() != at::kCUDA) {
-            t = t.toBackend(at::kCUDA);
+        if (is_cuda && t.device() != at::kCUDA) {
+            t = t.toBackend(at::Backend::CUDA);
         }
         if (t.dim() != 2) throw std::runtime_error("at::Tensor.ndim() != 2");
         if (t.stride(1) != 1) throw std::runtime_error("at::Tensor.stride(1) != 1");
@@ -96,7 +101,7 @@ namespace common {
     }
 
     // convient for frequently used type conversion
-    inline kaldi::SubMatrix<float> make_matrix(THFloatTensor* t) {
+    inline kaldi::SubMatrix<float> make_submatrix(THFloatTensor* t) {
         if (THFloatTensor_nDimension(t) != 2) throw std::runtime_error("dim != 2");
         return kaldi::SubMatrix<float>(
             THFloatTensor_data(t),
@@ -106,7 +111,7 @@ namespace common {
             );
     }
 
-    inline kaldi::CuSubMatrix<float> make_matrix(THCudaTensor* t) {
+    inline kaldi::CuSubMatrix<float> make_cusubmatrix(THCudaTensor* t) {
         if (THCudaTensor_nDimension(state, t) != 2) throw std::runtime_error("dim != 2");
         return kaldi::CuSubMatrix<float>(
             THCudaTensor_data(state, t),
@@ -133,7 +138,7 @@ namespace common {
 
     inline void copy_to_mat(const kaldi::GeneralMatrix& src, THFloatTensor* dst) {
         THFloatTensor_resize2d(dst, src.NumRows(), src.NumCols());
-        auto mat = common::make_matrix(dst);
+        auto mat = common::make_submatrix(dst);
         src.CopyToMat(&mat);
     }
 }

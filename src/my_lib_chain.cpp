@@ -22,7 +22,7 @@
 void copy_to_mat(kaldi::CuMatrix<float>& src, THCudaTensor* dst) {
     THCudaTensor_resize2d(state, dst, src.NumRows(), src.NumCols());
     auto aten = common::make_tensor(src);
-    auto src_tensor = reinterpret_cast<THCudaTensor*>(aten.unsafeGetTH(true));
+    auto src_tensor = reinterpret_cast<THCudaTensor*>(aten.unsafeGetTensorImpl());
     THCudaTensor_copy(state, dst, src_tensor);
     // auto mat = common::make_matrix(dst);
     // src.CopyToMat(&mat);
@@ -113,8 +113,8 @@ extern "C" {
         float l2_regularize, float leaky_hmm_coefficient, float xent_regularize)
     {
         common::set_kaldi_device(nnet_output_ptr);
-        auto nnet_output = common::make_matrix(nnet_output_ptr);
-        auto nnet_output_deriv = common::make_matrix(nnet_output_deriv_ptr);
+        auto nnet_output = common::make_cusubmatrix(nnet_output_ptr);
+        auto nnet_output_deriv = common::make_cusubmatrix(nnet_output_deriv_ptr);
 
         const auto& den_graph = *static_cast<kaldi::chain::DenominatorGraph*>(den_graph_ptr);
         const auto& supervision = *static_cast<kaldi::chain::Supervision*>(supervision_ptr);

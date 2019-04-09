@@ -27,7 +27,7 @@ using kaldi::chain::Supervision;
 
 void copy_to_mat(kaldi::GeneralMatrix& src, THFloatTensor* dst) {
     THFloatTensor_resize2d(dst, src.NumRows(), src.NumCols());
-    auto mat = common::make_matrix(dst);
+    auto mat = common::make_submatrix(dst);
     src.CopyToMat(&mat);
 }
 

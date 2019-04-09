@@ -618,7 +618,7 @@ void _ChainTrainingTest(
         return;
 
     THCudaTensor_resize2d(state, out, num_sequences * frames_per_sequence, den_graph.NumPdfs());
-    auto nnet_output = common::make_matrix(out);
+    auto nnet_output = common::make_cusubmatrix(out);
     //CuMatrix<BaseFloat> nnet_output(num_sequences * frames_per_sequence,
     //                                den_graph.NumPdfs());
 
@@ -634,7 +634,7 @@ void _ChainTrainingTest(
     //                                      nnet_output.NumCols(),
     //                                      kUndefined);
     THCudaTensor_resizeAs(state, grad, out);
-    auto nnet_output_deriv = common::make_matrix(grad);
+    auto nnet_output_deriv = common::make_cusubmatrix(grad);
 
 
     BaseFloat objf, l2_term, weight;

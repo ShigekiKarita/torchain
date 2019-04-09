@@ -2,9 +2,10 @@
 #  Compiler option settings
 # ==========================
 
-THC_INCLUDE=$(shell python -c "from torch.utils.ffi import _setup_wrapper;[print('-I '+p, end=' ') for p in _setup_wrapper(with_cuda=True)[1]]")
-TH_INCLUDE=$(shell python -c "from torch.utils.ffi import _setup_wrapper;[print('-I '+p, end=' ') for p in _setup_wrapper(with_cuda=False)[1]]")
+#THC_INCLUDE=$(shell python -c "from torch.utils.ffi import _setup_wrapper;[print('-I '+p, end=' ') for p in _setup_wrapper(with_cuda=True)[1]]")
+#TH_INCLUDE=$(shell python -c "from torch.utils.ffi import _setup_wrapper;[print('-I '+p, end=' ') for p in _setup_wrapper(with_cuda=False)[1]]")
 # TODO: extract this options like TH_INCLUDE
+TH_INCLUDE := $(shell python -c "import torch.utils.cpp_extension as C; print('-isystem' + str.join(' -isystem', C.include_paths()))")
 
 
 CXX_DEBUG_FLAGS		=	-g3 -O0 -DDEBUG -coverage
