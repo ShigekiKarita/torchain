@@ -55,21 +55,21 @@ if [ ${stage} -le 0 ]; then
     echo "${data_root}/extracted already exists. so skip download"
   else
     echo "download data at ${data_root}"
-    data_root=${data_root} ./getdata.sh
+    DATA_ROOT=${data_root} ./getdata.sh
   fi
 fi
 
 if [ ${stage} -le 1 ]; then
   echo "Stage 1: Data preparation"
-  # Select a subset of the data to use
-  # WARNING: the destination directory will be deleted if it already exists!
-  local/voxforge_select.sh --dialect $dialects ${data_root}/extracted ${selected} || exit 1
+  # # Select a subset of the data to use
+  # # WARNING: the destination directory will be deleted if it already exists!
+  # local/voxforge_select.sh --dialect $dialects ${data_root}/extracted ${selected} || exit 1
 
-  # Mapping the anonymous speakers to unique IDs
-  local/voxforge_map_anonymous.sh ${selected} || exit 1
+  # # Mapping the anonymous speakers to unique IDs
+  # local/voxforge_map_anonymous.sh ${selected} || exit 1
 
-  # Initial normalization of the data
-  local/voxforge_data_prep.sh --nspk_test ${nspk_test} ${selected} || exit 1
+  # # Initial normalization of the data
+  # local/voxforge_data_prep.sh --nspk_test ${nspk_test} ${selected} || exit 1
 
   # Prepare ARPA LM and vocabulary using SRILM
   local/voxforge_prepare_lm.sh --order ${lm_order} || exit 1
