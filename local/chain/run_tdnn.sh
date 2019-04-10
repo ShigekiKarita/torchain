@@ -33,6 +33,7 @@ test_sets="test_dev93 test_eval92"
 gmm=tri4b        # this is the source gmm-dir that we'll use for alignments; it
                  # should have alignments for the specified training data.
 num_threads_ubm=32
+use_speed_perturb=false
 nnet3_affix=       # affix for exp dirs, e.g. it was _cleaned in tedlium.
 
 # Options which are not passed through to run_ivector_common.sh
@@ -79,17 +80,21 @@ local/nnet3/run_ivector_common.sh \
   --stage $stage --nj $nj \
   --train-set $train_set --test-sets ${test_sets} --gmm $gmm \
   --num-threads-ubm $num_threads_ubm \
-  --nnet3-affix "$nnet3_affix"
+  --nnet3-affix "$nnet3_affix" --use-speed-perturb $use_speed_perturb
 
-
+if $use_speed_perturb; then
+    train_sp=${train_set}_sp
+else
+    train_sp=${train_set}
+fi
 
 gmm_dir=exp/${gmm}
-ali_dir=exp/${gmm}_ali_${train_set}_sp
-lat_dir=exp/chain${nnet3_affix}/${gmm}_${train_set}_sp_lats
+ali_dir=exp/${gmm}_ali_${train_sp}
+lat_dir=exp/chain${nnet3_affix}/${gmm}_${train_sp}_lats
 dir=exp/chain${nnet3_affix}/tdnn${affix}_sp
-train_data_dir=data/${train_set}_sp_hires
-train_ivector_dir=exp/nnet3${nnet3_affix}/ivectors_${train_set}_sp_hires
-lores_train_data_dir=data/${train_set}_sp
+train_data_dir=data/${train_sp}_hires
+train_ivector_dir=exp/nnet3${nnet3_affix}/ivectors_${train_sp}_hires
+lores_train_data_dir=data/${train_sp}
 
 # note: you don't necessarily have to change the treedir name
 # each time you do a new experiment-- only if you change the
@@ -245,6 +250,8 @@ if [ $stage -le 16 ]; then
     --dir=$dir  || exit 1;
 fi
 
+# TODO(karita): decoding with `data/lang`
+
 if [ $stage -le 17 ]; then
   # The reason we are using data/lang here, instead of $lang, is just to
   # emphasize that it's not actually important to give mkgraph.sh the
@@ -254,16 +261,10 @@ if [ $stage -le 17 ]; then
   # as long as phones.txt was compatible.
 
   utils/lang/check_phones_compatible.sh \
-    data/lang_test_tgpr/phones.txt $lang/phones.txt
+    data/lang/phones.txt $lang/phones.txt
   utils/mkgraph.sh \
-    --self-loop-scale 1.0 data/lang_test_tgpr \
-    $tree_dir $tree_dir/graph_tgpr || exit 1;
-
-  utils/lang/check_phones_compatible.sh \
-    data/lang_test_bd_tgpr/phones.txt $lang/phones.txt
-  utils/mkgraph.sh \
-    --self-loop-scale 1.0 data/lang_test_bd_tgpr \
-    $tree_dir $tree_dir/graph_bd_tgpr || exit 1;
+    --self-loop-scale 1.0 data/lang \
+    $tree_dir $tree_dir/graph_lang || exit 1;
 fi
 
 if [ $stage -le 18 ]; then
@@ -274,7 +275,7 @@ if [ $stage -le 18 ]; then
     (
       data_affix=$(echo $data | sed s/test_//)
       nspk=$(wc -l <data/${data}_hires/spk2utt)
-      for lmtype in tgpr bd_tgpr; do
+      for lmtype in lang; do
         steps/nnet3/decode.sh \
           --acwt 1.0 --post-decode-acwt 10.0 \
           --extra-left-context 0 --extra-right-context 0 \
@@ -285,56 +286,56 @@ if [ $stage -le 18 ]; then
           --online-ivector-dir exp/nnet3${nnet3_affix}/ivectors_${data}_hires \
           $tree_dir/graph_${lmtype} data/${data}_hires ${dir}/decode_${lmtype}_${data_affix} || exit 1
       done
-      steps/lmrescore.sh \
-        --self-loop-scale 1.0 \
-        --cmd "$decode_cmd" data/lang_test_{tgpr,tg} \
-        data/${data}_hires ${dir}/decode_{tgpr,tg}_${data_affix} || exit 1
-      steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
-        data/lang_test_bd_{tgpr,fgconst} \
-       data/${data}_hires ${dir}/decode_${lmtype}_${data_affix}{,_fg} || exit 1
-    ) || touch $dir/.error &
+    #   steps/lmrescore.sh \
+    #     --self-loop-scale 1.0 \
+    #     --cmd "$decode_cmd" data/lang_test_{tgpr,tg} \
+    #     data/${data}_hires ${dir}/decode_{tgpr,tg}_${data_affix} || exit 1
+    #   steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
+    #     data/lang_test_bd_{tgpr,fgconst} \
+    #    data/${data}_hires ${dir}/decode_${lmtype}_${data_affix}{,_fg} || exit 1
+    # ) || touch $dir/.error &
   done
   wait
   [ -f $dir/.error ] && echo "$0: there was a problem while decoding" && exit 1
 fi
 
-# Not testing the 'looped' decoding separately, because for
-# TDNN systems it would give exactly the same results as the
-# normal decoding.
+# # Not testing the 'looped' decoding separately, because for
+# # TDNN systems it would give exactly the same results as the
+# # normal decoding.
 
-if $test_online_decoding && [ $stage -le 19 ]; then
-  # note: if the features change (e.g. you add pitch features), you will have to
-  # change the options of the following command line.
-  steps/online/nnet3/prepare_online_decoding.sh \
-    --mfcc-config conf/mfcc_hires.conf \
-    $lang exp/nnet3${nnet3_affix}/extractor ${dir} ${dir}_online
+# if $test_online_decoding && [ $stage -le 19 ]; then
+#   # note: if the features change (e.g. you add pitch features), you will have to
+#   # change the options of the following command line.
+#   steps/online/nnet3/prepare_online_decoding.sh \
+#     --mfcc-config conf/mfcc_hires.conf \
+#     $lang exp/nnet3${nnet3_affix}/extractor ${dir} ${dir}_online
 
-  rm $dir/.error 2>/dev/null || true
+#   rm $dir/.error 2>/dev/null || true
 
-  for data in $test_sets; do
-    (
-      data_affix=$(echo $data | sed s/test_//)
-      nspk=$(wc -l <data/${data}_hires/spk2utt)
-      # note: we just give it "data/${data}" as it only uses the wav.scp, the
-      # feature type does not matter.
-      for lmtype in tgpr bd_tgpr; do
-        steps/online/nnet3/decode.sh \
-          --acwt 1.0 --post-decode-acwt 10.0 \
-          --nj $nspk --cmd "$decode_cmd" \
-          $tree_dir/graph_${lmtype} data/${data} ${dir}_online/decode_${lmtype}_${data_affix} || exit 1
-      done
-      steps/lmrescore.sh \
-        --self-loop-scale 1.0 \
-        --cmd "$decode_cmd" data/lang_test_{tgpr,tg} \
-        data/${data}_hires ${dir}_online/decode_{tgpr,tg}_${data_affix} || exit 1
-      steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
-        data/lang_test_bd_{tgpr,fgconst} \
-       data/${data}_hires ${dir}_online/decode_${lmtype}_${data_affix}{,_fg} || exit 1
-    ) || touch $dir/.error &
-  done
-  wait
-  [ -f $dir/.error ] && echo "$0: there was a problem while decoding" && exit 1
-fi
+#   for data in $test_sets; do
+#     (
+#       data_affix=$(echo $data | sed s/test_//)
+#       nspk=$(wc -l <data/${data}_hires/spk2utt)
+#       # note: we just give it "data/${data}" as it only uses the wav.scp, the
+#       # feature type does not matter.
+#       for lmtype in tgpr bd_tgpr; do
+#         steps/online/nnet3/decode.sh \
+#           --acwt 1.0 --post-decode-acwt 10.0 \
+#           --nj $nspk --cmd "$decode_cmd" \
+#           $tree_dir/graph_${lmtype} data/${data} ${dir}_online/decode_${lmtype}_${data_affix} || exit 1
+#       done
+#       steps/lmrescore.sh \
+#         --self-loop-scale 1.0 \
+#         --cmd "$decode_cmd" data/lang_test_{tgpr,tg} \
+#         data/${data}_hires ${dir}_online/decode_{tgpr,tg}_${data_affix} || exit 1
+#       steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
+#         data/lang_test_bd_{tgpr,fgconst} \
+#        data/${data}_hires ${dir}_online/decode_${lmtype}_${data_affix}{,_fg} || exit 1
+#     ) || touch $dir/.error &
+#   done
+#   wait
+#   [ -f $dir/.error ] && echo "$0: there was a problem while decoding" && exit 1
+# fi
 
 
 exit 0;
