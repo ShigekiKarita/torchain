@@ -34,6 +34,7 @@ gmm=tri4b        # this is the source gmm-dir that we'll use for alignments; it
                  # should have alignments for the specified training data.
 num_threads_ubm=32
 use_speed_perturb=false
+use_ivector=false
 nnet3_affix=       # affix for exp dirs, e.g. it was _cleaned in tedlium.
 
 # Options which are not passed through to run_ivector_common.sh
@@ -76,40 +77,51 @@ where "nvcc" is installed.
 EOF
 fi
 
-local/nnet3/run_ivector_common.sh \
-  --stage $stage --nj $nj \
-  --train-set $train_set --test-sets ${test_sets} --gmm $gmm \
-  --num-threads-ubm $num_threads_ubm \
-  --nnet3-affix "$nnet3_affix" --use-speed-perturb $use_speed_perturb
+if [ $stage -le 11 ]; then
+    echo "Stage 11: ivector extraction"
+    local/nnet3/run_ivector_common.sh \
+        --stage 8 \
+        --use-ivector $use_ivector \
+        --nj $nj \
+        --train-set $train_set --test-sets ${test_sets} --gmm $gmm \
+        --num-threads-ubm $num_threads_ubm \
+        --nnet3-affix "$nnet3_affix" --use-speed-perturb $use_speed_perturb
+fi
 
 if $use_speed_perturb; then
     train_sp=${train_set}_sp
+    dir=exp/chain${nnet3_affix}/tdnn${affix}_sp
+    # note: you don't necessarily have to change the treedir name
+    # each time you do a new experiment-- only if you change the
+    # configuration in a way that affects the tree.
+    tree_dir=exp/chain${nnet3_affix}/tree_a_sp
 else
     train_sp=${train_set}
+    dir=exp/chain${nnet3_affix}/tdnn${affix}
+    tree_dir=exp/chain${nnet3_affix}/tree_a
 fi
 
 gmm_dir=exp/${gmm}
 ali_dir=exp/${gmm}_ali_${train_sp}
 lat_dir=exp/chain${nnet3_affix}/${gmm}_${train_sp}_lats
-dir=exp/chain${nnet3_affix}/tdnn${affix}_sp
 train_data_dir=data/${train_sp}_hires
 train_ivector_dir=exp/nnet3${nnet3_affix}/ivectors_${train_sp}_hires
 lores_train_data_dir=data/${train_sp}
 
-# note: you don't necessarily have to change the treedir name
-# each time you do a new experiment-- only if you change the
-# configuration in a way that affects the tree.
-tree_dir=exp/chain${nnet3_affix}/tree_a_sp
 # the 'lang' directory is created by this script.
 # If you create such a directory with a non-standard topology
 # you should probably name it differently.
 lang=data/lang_chain
 
-for f in $train_data_dir/feats.scp $train_ivector_dir/ivector_online.scp \
+for f in $train_data_dir/feats.scp \
     $lores_train_data_dir/feats.scp $gmm_dir/final.mdl \
     $ali_dir/ali.1.gz $gmm_dir/final.mdl; do
   [ ! -f $f ] && echo "$0: expected file $f to exist" && exit 1
 done
+if $use_ivector; then
+    f= $train_ivector_dir/ivector_online.scp
+    [ ! -f $f ] && echo "$0: expected file $f to exist" && exit 1
+fi
 
 
 if [ $stage -le 12 ]; then
@@ -173,7 +185,8 @@ if [ $stage -le 15 ]; then
   output_opts="l2-regularize=0.005"
 
   mkdir -p $dir/configs
-  cat <<EOF > $dir/configs/network.xconfig
+  if $use_ivector; then
+      cat <<EOF > $dir/configs/network.xconfig
   input dim=100 name=ivector
   input dim=40 name=input
 
@@ -205,19 +218,57 @@ if [ $stage -le 15 ]; then
   prefinal-layer name=prefinal-xent input=prefinal-l $prefinal_opts big-dim=1024 small-dim=192
   output-layer name=output-xent dim=$num_targets learning-rate-factor=$learning_rate_factor $output_opts
 EOF
+  else
+        cat <<EOF > $dir/configs/network.xconfig
+  input dim=40 name=input
+
+  # please note that it is important to have input layer with the name=input
+  # as the layer immediately preceding the fixed-affine-layer to enable
+  # the use of short notation for the descriptor
+  fixed-affine-layer name=lda input=Append(-1,0,1) affine-transform-file=$dir/configs/lda.mat
+
+  # the first splicing is moved before the lda layer, so no splicing here
+  relu-batchnorm-dropout-layer name=tdnn1 $tdnn_opts dim=1024
+  tdnnf-layer name=tdnnf2 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=1
+  tdnnf-layer name=tdnnf3 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=1
+  tdnnf-layer name=tdnnf4 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=1
+  tdnnf-layer name=tdnnf5 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=0
+  tdnnf-layer name=tdnnf6 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf7 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf8 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf9 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf10 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf11 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf12 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  tdnnf-layer name=tdnnf13 $tdnnf_opts dim=1024 bottleneck-dim=128 time-stride=3
+  linear-component name=prefinal-l dim=192 $linear_opts
+
+  prefinal-layer name=prefinal-chain input=prefinal-l $prefinal_opts big-dim=1024 small-dim=192
+  output-layer name=output include-log-softmax=false dim=$num_targets $output_opts
+
+  prefinal-layer name=prefinal-xent input=prefinal-l $prefinal_opts big-dim=1024 small-dim=192
+  output-layer name=output-xent dim=$num_targets learning-rate-factor=$learning_rate_factor $output_opts
+EOF
+  fi
   steps/nnet3/xconfig_to_configs.py --xconfig-file $dir/configs/network.xconfig --config-dir $dir/configs/
 fi
 
 
 if [ $stage -le 16 ]; then
-  if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d $dir/egs/storage ]; then
-    utils/create_split_dir.pl \
-     /export/b0{3,4,5,6}/$USER/kaldi-data/egs/wsj-$(date +'%m_%d_%H_%M')/s5/$dir/egs/storage $dir/egs/storage
+  # if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d $dir/egs/storage ]; then
+  #   utils/create_split_dir.pl \
+  #    /export/b0{3,4,5,6}/$USER/kaldi-data/egs/wsj-$(date +'%m_%d_%H_%M')/s5/$dir/egs/storage $dir/egs/storage
+  # fi
+  if $use_ivector;then
+      ivec_option="--feat.online-ivector-dir $train_ivector_dir"
+  else
+      ivec_option=""
   fi
+
 
   steps/nnet3/chain/train.py --stage=$train_stage \
     --cmd="$decode_cmd" \
-    --feat.online-ivector-dir=$train_ivector_dir \
+    $ivec_option \
     --feat.cmvn-opts="--norm-means=false --norm-vars=false" \
     --chain.xent-regularize $xent_regularize \
     --chain.leaky-hmm-coefficient=0.1 \
@@ -272,20 +323,26 @@ if [ $stage -le 18 ]; then
   rm $dir/.error 2>/dev/null || true
 
   for data in $test_sets; do
-    (
-      data_affix=$(echo $data | sed s/test_//)
-      nspk=$(wc -l <data/${data}_hires/spk2utt)
-      for lmtype in lang; do
-        steps/nnet3/decode.sh \
-          --acwt 1.0 --post-decode-acwt 10.0 \
-          --extra-left-context 0 --extra-right-context 0 \
-          --extra-left-context-initial 0 \
-          --extra-right-context-final 0 \
-          --frames-per-chunk $frames_per_chunk \
-          --nj $nspk --cmd "$decode_cmd"  --num-threads 4 \
-          --online-ivector-dir exp/nnet3${nnet3_affix}/ivectors_${data}_hires \
-          $tree_dir/graph_${lmtype} data/${data}_hires ${dir}/decode_${lmtype}_${data_affix} || exit 1
-      done
+      (
+          if $use_ivector;then
+              ivecdir=exp/nnet3${nnet3_affix}/ivectors_${data}_hires
+          else
+              ivecdir=
+          fi
+
+          data_affix=$(echo $data | sed s/test_//)
+          nspk=$(wc -l <data/${data}_hires/spk2utt)
+          for lmtype in lang; do
+              steps/nnet3/decode.sh \
+                  --acwt 1.0 --post-decode-acwt 10.0 \
+                  --extra-left-context 0 --extra-right-context 0 \
+                  --extra-left-context-initial 0 \
+                  --extra-right-context-final 0 \
+                  --frames-per-chunk $frames_per_chunk \
+                  --nj $nspk --cmd "$decode_cmd"  --num-threads 4 \
+                  --online-ivector-dir "${ivecdir}" \
+                  $tree_dir/graph_${lmtype} data/${data}_hires ${dir}/decode_${lmtype}_${data_affix} || exit 1
+          done
     #   steps/lmrescore.sh \
     #     --self-loop-scale 1.0 \
     #     --cmd "$decode_cmd" data/lang_test_{tgpr,tg} \
@@ -298,44 +355,3 @@ if [ $stage -le 18 ]; then
   wait
   [ -f $dir/.error ] && echo "$0: there was a problem while decoding" && exit 1
 fi
-
-# # Not testing the 'looped' decoding separately, because for
-# # TDNN systems it would give exactly the same results as the
-# # normal decoding.
-
-# if $test_online_decoding && [ $stage -le 19 ]; then
-#   # note: if the features change (e.g. you add pitch features), you will have to
-#   # change the options of the following command line.
-#   steps/online/nnet3/prepare_online_decoding.sh \
-#     --mfcc-config conf/mfcc_hires.conf \
-#     $lang exp/nnet3${nnet3_affix}/extractor ${dir} ${dir}_online
-
-#   rm $dir/.error 2>/dev/null || true
-
-#   for data in $test_sets; do
-#     (
-#       data_affix=$(echo $data | sed s/test_//)
-#       nspk=$(wc -l <data/${data}_hires/spk2utt)
-#       # note: we just give it "data/${data}" as it only uses the wav.scp, the
-#       # feature type does not matter.
-#       for lmtype in tgpr bd_tgpr; do
-#         steps/online/nnet3/decode.sh \
-#           --acwt 1.0 --post-decode-acwt 10.0 \
-#           --nj $nspk --cmd "$decode_cmd" \
-#           $tree_dir/graph_${lmtype} data/${data} ${dir}_online/decode_${lmtype}_${data_affix} || exit 1
-#       done
-#       steps/lmrescore.sh \
-#         --self-loop-scale 1.0 \
-#         --cmd "$decode_cmd" data/lang_test_{tgpr,tg} \
-#         data/${data}_hires ${dir}_online/decode_{tgpr,tg}_${data_affix} || exit 1
-#       steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
-#         data/lang_test_bd_{tgpr,fgconst} \
-#        data/${data}_hires ${dir}_online/decode_${lmtype}_${data_affix}{,_fg} || exit 1
-#     ) || touch $dir/.error &
-#   done
-#   wait
-#   [ -f $dir/.error ] && echo "$0: there was a problem while decoding" && exit 1
-# fi
-
-
-exit 0;

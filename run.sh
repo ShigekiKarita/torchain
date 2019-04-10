@@ -171,6 +171,5 @@ if [ ${stage} -le 6 ]; then
 fi
 
 
-if [ ${stage} -le 7 ]; then
-  ./local/chain/run_tdnn.sh --train_set train --test_sets test --gmm tri3b --nj ${njobs} --num_threads_ubm 1 --remove_egs false
-fi
+./local/chain/run_tdnn.sh --stage $stage --train_set train --test_sets test --gmm tri3b --nj ${njobs} --num_threads_ubm 1 --remove_egs false
+
