@@ -61,15 +61,15 @@ fi
 
 if [ ${stage} -le 1 ]; then
   echo "Stage 1: Data preparation"
-  # # Select a subset of the data to use
-  # # WARNING: the destination directory will be deleted if it already exists!
-  # local/voxforge_select.sh --dialect $dialects ${data_root}/extracted ${selected} || exit 1
+  # Select a subset of the data to use
+  # WARNING: the destination directory will be deleted if it already exists!
+  local/voxforge_select.sh --dialect $dialects ${data_root}/extracted ${selected} || exit 1
 
-  # # Mapping the anonymous speakers to unique IDs
-  # local/voxforge_map_anonymous.sh ${selected} || exit 1
+  # Mapping the anonymous speakers to unique IDs
+  local/voxforge_map_anonymous.sh ${selected} || exit 1
 
-  # # Initial normalization of the data
-  # local/voxforge_data_prep.sh --nspk_test ${nspk_test} ${selected} || exit 1
+  # Initial normalization of the data
+  local/voxforge_data_prep.sh --nspk_test ${nspk_test} ${selected} || exit 1
 
   # Prepare ARPA LM and vocabulary using SRILM
   local/voxforge_prepare_lm.sh --order ${lm_order} || exit 1
@@ -132,23 +132,16 @@ if [ ${stage} -le 4 ]; then
   steps/decode.sh --config conf/decode.config --nj $njobs --cmd "$decode_cmd" \
                   exp/tri1/graph data/test exp/tri1/decode
 
-  #draw-tree data/lang/phones.txt exp/tri1/tree | dot -Tps -Gsize=8,10.5 | ps2pdf - tree.pdf
+  #draw-tree data/lang/phones.txt exp/tri1/tree | dot -Tpdf > tree.pdf
 
   # align tri1
   steps/align_si.sh --nj $njobs --cmd "$train_cmd" \
                     --use-graphs true data/train data/lang exp/tri1 exp/tri1_ali || exit 1;
 fi
 
-if [ ${stage} -le 5 ]; then
-  echo "Stage 5: Triphone GMM acoustic model for MFCC+deltas on tri1 alignments (tri2)"
-  # train tri2a [delta+delta-deltas]
-  steps/train_deltas.sh --cmd "$train_cmd" 2000 11000 \
-                        data/train data/lang exp/tri1_ali exp/tri2a || exit 1;
 
-  # decode tri2a
-  utils/mkgraph.sh data/lang_test exp/tri2a exp/tri2a/graph
-  steps/decode.sh --config conf/decode.config --nj $njobs --cmd "$decode_cmd" \
-                  exp/tri2a/graph data/test exp/tri2a/decode
+if [ ${stage} -le 5 ]; then
+  echo "Stage 5: Triphone GMM acoustic model for MFCC+deltas LDA+MLLT on tri1 alignments (tri2b)"
 
   # train and decode tri2b [LDA+MLLT]
   steps/train_lda_mllt.sh --cmd "$train_cmd" 2000 11000 \
@@ -161,32 +154,6 @@ if [ ${stage} -le 5 ]; then
   steps/align_si.sh --nj $njobs --cmd "$train_cmd" --use-graphs true \
                     data/train data/lang exp/tri2b exp/tri2b_ali || exit 1;
 fi
-
-# NOTE: these scripts are not used for tri3b
-
-# #  Do MMI on top of LDA+MLLT.
-# steps/make_denlats.sh --nj $njobs --cmd "$train_cmd" \
-#                       data/train data/lang exp/tri2b exp/tri2b_denlats || exit 1;
-# steps/train_mmi.sh data/train data/lang exp/tri2b_ali exp/tri2b_denlats exp/tri2b_mmi || exit 1;
-# steps/decode.sh --config conf/decode.config --iter 4 --nj $njobs --cmd "$decode_cmd" \
-#                 exp/tri2b/graph data/test exp/tri2b_mmi/decode_it4
-# steps/decode.sh --config conf/decode.config --iter 3 --nj $njobs --cmd "$decode_cmd" \
-#                 exp/tri2b/graph data/test exp/tri2b_mmi/decode_it3
-
-# # Do the same with boosting.
-# steps/train_mmi.sh --boost 0.05 data/train data/lang \
-#                    exp/tri2b_ali exp/tri2b_denlats exp/tri2b_mmi_b0.05 || exit 1;
-# steps/decode.sh --config conf/decode.config --iter 4 --nj $njobs --cmd "$decode_cmd" \
-#                 exp/tri2b/graph data/test exp/tri2b_mmi_b0.05/decode_it4 || exit 1;
-# steps/decode.sh --config conf/decode.config --iter 3 --nj $njobs --cmd "$decode_cmd" \
-#                 exp/tri2b/graph data/test exp/tri2b_mmi_b0.05/decode_it3 || exit 1;
-
-# # Do MPE.
-# steps/train_mpe.sh data/train data/lang exp/tri2b_ali exp/tri2b_denlats exp/tri2b_mpe || exit 1;
-# steps/decode.sh --config conf/decode.config --iter 4 --nj $njobs --cmd "$decode_cmd" \
-#                 exp/tri2b/graph data/test exp/tri2b_mpe/decode_it4 || exit 1;
-# steps/decode.sh --config conf/decode.config --iter 3 --nj $njobs --cmd "$decode_cmd" \
-#                 exp/tri2b/graph data/test exp/tri2b_mpe/decode_it3 || exit 1;
 
 
 if [ ${stage} -le 6 ]; then
@@ -203,56 +170,7 @@ if [ ${stage} -le 6 ]; then
                        data/train data/lang exp/tri3b exp/tri3b_ali || exit 1;
 fi
 
-# NOTE: Commonly fMMI and MMI alignments are not used for NN training
 
-# ## MMI on top of tri3b (i.e. LDA+MLLT+SAT+MMI)
-# steps/make_denlats.sh --config conf/decode.config \
-#    --nj $njobs --cmd "$train_cmd" --transform-dir exp/tri3b_ali \
-#   data/train data/lang exp/tri3b exp/tri3b_denlats || exit 1;
-# steps/train_mmi.sh data/train data/lang exp/tri3b_ali exp/tri3b_denlats exp/tri3b_mmi || exit 1;
-
-# steps/decode_fmllr.sh --config conf/decode.config --nj $njobs --cmd "$decode_cmd" \
-#   --alignment-model exp/tri3b/final.alimdl --adapt-model exp/tri3b/final.mdl \
-#    exp/tri3b/graph data/test exp/tri3b_mmi/decode || exit 1;
-
-# # Do a decoding that uses the exp/tri3b/decode directory to get transforms from.
-# steps/decode.sh --config conf/decode.config --nj $njobs --cmd "$decode_cmd" \
-#   --transform-dir exp/tri3b/decode  exp/tri3b/graph data/test exp/tri3b_mmi/decode2 || exit 1;
-
-
-# #first, train UBM for fMMI experiments.
-# steps/train_diag_ubm.sh --silence-weight 0.5 --nj $njobs --cmd "$train_cmd" \
-#   250 data/train data/lang exp/tri3b_ali exp/dubm3b
-
-# # Next, various fMMI+MMI configurations.
-# steps/train_mmi_fmmi.sh --learning-rate 0.0025 \
-#   --boost 0.1 --cmd "$train_cmd" data/train data/lang exp/tri3b_ali exp/dubm3b exp/tri3b_denlats \
-#   exp/tri3b_fmmi_b || exit 1;
-
-# for iter in 3 4 5 6 7 8; do
-#  steps/decode_fmmi.sh --nj $njobs --config conf/decode.config --cmd "$decode_cmd" --iter $iter \
-#    --transform-dir exp/tri3b/decode  exp/tri3b/graph data/test exp/tri3b_fmmi_b/decode_it$iter &
-# done
-
-# steps/train_mmi_fmmi.sh --learning-rate 0.001 \
-#   --boost 0.1 --cmd "$train_cmd" data/train data/lang exp/tri3b_ali exp/dubm3b exp/tri3b_denlats \
-#   exp/tri3b_fmmi_c || exit 1;
-
-# for iter in 3 4 5 6 7 8; do
-#  steps/decode_fmmi.sh --nj $njobs --config conf/decode.config --cmd "$decode_cmd" --iter $iter \
-#    --transform-dir exp/tri3b/decode  exp/tri3b/graph data/test exp/tri3b_fmmi_c/decode_it$iter &
-# done
-
-# # for indirect one, use twice the learning rate.
-# steps/train_mmi_fmmi_indirect.sh --learning-rate 0.002 --schedule "fmmi fmmi fmmi fmmi mmi mmi mmi mmi" \
-#   --boost 0.1 --cmd "$train_cmd" data/train data/lang exp/tri3b_ali exp/dubm3b exp/tri3b_denlats \
-#   exp/tri3b_fmmi_d || exit 1;
-
-# for iter in 3 4 5 6 7 8; do
-#  steps/decode_fmmi.sh --nj $njobs --config conf/decode.config --cmd "$decode_cmd" --iter $iter \
-#    --transform-dir exp/tri3b/decode  exp/tri3b/graph data/test exp/tri3b_fmmi_d/decode_it$iter &
-# done
-
-
-# NOTE: Commonly SGMM2 is not used for NN training alignment
-# local/run_sgmm2.sh --nj $njobs
+if [ ${stage} -le 7 ]; then
+  ./local/chain/run_tdnn.sh --train_set train --test_sets test --gmm tri3b --nj ${njobs} --num_threads_ubm ${njobs} --remove_egs false
+fi

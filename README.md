@@ -27,6 +27,16 @@ cd <this repos>
 
 First of all, you need to know "Kaldi terms". See http://kaldi-asr.org/doc/glossary.html
 
+misc:
+- "alignment" is a HMM predicted (1-best) phoneme for each input frame on one utterance
+- "lattice" is a directed acyclic graph (DAG) generating (N-best) recogniton hypotheses per one utterance. See http://kaldi-asr.org/doc/lattices.html
+- "tree" is a set of decision tree diagrams for clustering phonemes. See http://kaldi-asr.org/doc/tree_externals.html
+- "b" of tri2b has no special meaning. "tri2a" was a kind of "tri2b" without LDA+MLLT but its alignments were not used for subsequent-pass AMs.
+- "nosp" refers to the dictionary before silence probabilities and pronunciation probabilities are added
+- LDA, MLLT and SAT are feature/speaker adaptation methods
+- HCLG.fst (H: HMM, C: context, L: lexicon (dictionary), G: grammer (LM)) http://kaldi-asr.org/doc/graph.html
+
+
 #### In WSJ
 
 - We refer to `egs/wsj/s5/run.sh` as a baseline recipe for the chain model
@@ -35,17 +45,10 @@ First of all, you need to know "Kaldi terms". See http://kaldi-asr.org/doc/gloss
   - tri1: triphone GMM on MFCC+deltas half subset of si84 with mono alignments
   - tri2b: triphone GMM on MFCC+deltas LDA+MLLT full si84 with tri1 alignments
   - tri3b: triphone GMM on MFCC+deltas LDA+MLLT+SAT full si284 (larger traning set) with tri2b alignments
-- "alignment" is a HMM predicted (1-best) phoneme for each input frame on one utterance
-- "lattice" is a directed acyclic graph (DAG) generating (N-best) recogniton hypotheses per one utterance. See http://kaldi-asr.org/doc/lattices.html
-- "tree" is a set of decision tree diagrams for clustering phonemes. See http://kaldi-asr.org/doc/tree_externals.html
-- "b" of tri2b has no special meaning. "tri2a" was a kind of "tri2b" without LDA+MLLT but its alignments were not used for subsequent-pass AMs.
-- "nosp" refers to the dictionary before silence probabilities and pronunciation probabilities are added
-- LDA, MLLT and SAT are feature adaptation methods
-- Qustion: what is "a" in HCLGa.fst? (H: HMM, C: context, L: lexicon (dictionary), G: grammer (LM)). http://kaldi-asr.org/doc/graph.html
 
 #### In Voxforge
 
-training took about 1-2 hour (overall)
+Everything is same to WSJ but a pronunciation dictionary (CMUdict+G2P). GMM training may take about 1-2 hour (overall)
 
 - GMM-HMM model stages
   - mono: monophone GMM on MFCC of a 1k train subset
@@ -76,14 +79,36 @@ exp/tri2b/decode/wer_14
 %SER 58.20 [ 291 / 500 ]
 ```
   - tri3b: triphone GMM on MFCC+deltas and LDA+MLLT+SAT with tri2b alignments
+```
+Overall, lattice depth (10,50,90-percentile)=(1,2,9) and mean=4.4
+steps/diagnostic/analyze_lats.sh: see stats in exp/tri3b/decode/log/analyze_lattice_depth_stats.log
+...
+exp/tri3b/decode/wer_17
+%WER 14.11 [ 630 / 4466, 50 ins, 177 del, 403 sub ]
+%SER 50.40 [ 252 / 500 ]
+```
 
 ### Chain model setting
 
 #### in WSJ
 
-### Chain model setting
+- stages
+  - 11. `local/nnet3/run_ivector_common.sh`: apply speed perturbation (only for the train set), 40-dim MFCC (see `conf/mfcc_hires.conf`) and i-vector feature extraction, and alignments from GMM with speed perturbation (only for the train set)
+    - input: `data/train (MFCC), data/test (MFCC), exp/tri3b (GMM)`
+    - output: `data/train_sp_hires (sp hires MFCC), data/tri3b_train_ali_sp (sp alignments), exp/nnet3/ivectors_train_sp_hires (i-vector), data/test_hires (sp hires MFCC)`
+  - 12. `steps/nnet3/chain/gen_topo.py`: create a new HMM topology that has two states (transition or loop) per phone for chain
+    - input: `data/lang (pronunciation dictionary)`
+    - output: `data/lang_chain`
+  - 13. `steps/align_fmllr_lats.sh`: get lattices with GMM and LMs
+    - input: `data/train_sp, data/lang data/tri3b`
+    - output: `exp/chain/tri3b_train_sp_lats` 
+  - 14. `steps/nnet3/chain/build_tree.sh`: create a new tree on the chain HMM topology
+    - input: `data/`
+  - 
 
 #### in Voxforge
+
+ditto
 
 ## debug
 
