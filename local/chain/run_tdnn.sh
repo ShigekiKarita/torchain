@@ -80,7 +80,7 @@ fi
 if [ $stage -le 11 ]; then
     echo "Stage 11: ivector extraction"
     local/nnet3/run_ivector_common.sh \
-        --stage 8 \
+        --stage 0 \
         --use-ivector $use_ivector \
         --nj $nj \
         --train-set $train_set --test-sets ${test_sets} --gmm $gmm \
