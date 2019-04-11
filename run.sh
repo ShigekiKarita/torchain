@@ -170,6 +170,9 @@ if [ ${stage} -le 6 ]; then
                        data/train data/lang exp/tri3b exp/tri3b_ali || exit 1;
 fi
 
+# this is simpler one. this just extracts 40-dim MFCC and trains NN
+./local/chain/run_tdnn_simple.sh --stage $stage --train_set train --test_sets test --gmm tri3b --nj ${njobs} --remove_egs false
 
-./local/chain/run_tdnn.sh --stage $stage --train_set train --test_sets test --gmm tri3b --nj ${njobs} --num_threads_ubm 1 --remove_egs false
+# this supports i-vector (speaker adaptation) and speed perturbation (data augumentation)
+# ./local/chain/run_tdnn.sh --stage $stage --train_set train --test_sets test --gmm tri3b --nj ${njobs} --num_threads_ubm 1 --remove_egs false
 

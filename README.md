@@ -76,13 +76,12 @@ exp/tri3b/decode/wer_17
 ```
   - chain: lattice-free MMI training with a time-delay neural network on 40-dim MFCC LDA+MLLT+SAT with tri3b alignments
 ```
-Overall, lattice depth (10,50,90-percentile)=(1,2,19) and mean=9.7
-steps/diagnostic/analyze_lats.sh: see stats in exp/chain_noivec_nosp_decodetmp/tdnn1g/decode_lang_test/log/analyze_lattice_depth_stats.log
-score best paths
+Overall, lattice depth (10,50,90-percentile)=(1,2,10) and mean=6.1
+steps/diagnostic/analyze_lats.sh: see stats in exp/chain_noivec_nosp/tdnn1g/decode_lang_test/log/analyze_alignments.log
 ...
-exp/chain_noivec_nosp_decodetmp/tdnn1g/decode_lang_test/wer_13
-%WER 7.05 [ 315 / 4466, 14 ins, 124 del, 177 sub ]
-%SER 32.40 [ 162 / 500 ] 
+exp/chain_noivec_nosp/tdnn1g/decode_lang_test/wer_13
+%WER 5.28 [ 236 / 4466, 13 ins, 93 del, 130 sub ]
+%SER 26.20 [ 131 / 500 ]
 ```
 
 
