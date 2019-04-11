@@ -16,14 +16,13 @@ cd <this repos>
 ./run.sh
 ```
 
-## note
 
-### non-default tools deps
+## non-default tools deps
 
 - srilm (language model): needs to download .tgz manually from http://www.speech.sri.com/projects/srilm/download.html
 - sequitur (grapheme-to-phoneme model): needs to `python setup,py install` manually at `tools/sequitur`
 
-### GMM-HMM acoustic model setting 
+## acoustic modeling stages
 
 First of all, you need to know "Kaldi terms". See http://kaldi-asr.org/doc/glossary.html
 
@@ -36,19 +35,7 @@ misc:
 - LDA, MLLT and SAT are feature/speaker adaptation methods
 - HCLG.fst (H: HMM, C: context, L: lexicon (dictionary), G: grammer (LM)) http://kaldi-asr.org/doc/graph.html
 
-
-#### In WSJ
-
-- We refer to `egs/wsj/s5/run.sh` as a baseline recipe for the chain model
-- In the WSJ recipe, GMM-HMM models are built as follows (eventually larger feature with larger data through multi-pass alignments):
-  - mono: monophone GMM on MFCC 2k short subset of si84 (smaller training set)
-  - tri1: triphone GMM on MFCC+deltas half subset of si84 with mono alignments
-  - tri2b: triphone GMM on MFCC+deltas LDA+MLLT full si84 with tri1 alignments
-  - tri3b: triphone GMM on MFCC+deltas LDA+MLLT+SAT full si284 (larger traning set) with tri2b alignments
-
-#### In Voxforge
-
-Everything is same to WSJ but a pronunciation dictionary (CMUdict+G2P). GMM training may take about 1-2 hour (overall)
+Everything is same to the existing WSJ recipe but a pronunciation dictionary (CMUdict+G2P). GMM training may take about 1-2 hour (overall)
 
 - GMM-HMM model stages
   - mono: monophone GMM on MFCC of a 1k train subset
@@ -87,28 +74,17 @@ exp/tri3b/decode/wer_17
 %WER 14.11 [ 630 / 4466, 50 ins, 177 del, 403 sub ]
 %SER 50.40 [ 252 / 500 ]
 ```
+  - chain: lattice-free MMI training with a time-delay neural network on 40-dim MFCC LDA+MLLT+SAT with tri3b alignments
+```
+Overall, lattice depth (10,50,90-percentile)=(1,2,19) and mean=9.7
+steps/diagnostic/analyze_lats.sh: see stats in exp/chain_noivec_nosp_decodetmp/tdnn1g/decode_lang_test/log/analyze_lattice_depth_stats.log
+score best paths
+...
+exp/chain_noivec_nosp_decodetmp/tdnn1g/decode_lang_test/wer_13
+%WER 7.05 [ 315 / 4466, 14 ins, 124 del, 177 sub ]
+%SER 32.40 [ 162 / 500 ] 
+```
 
-### Chain model setting
-
-#### in WSJ
-
-- stages
-  - 11. `local/nnet3/run_ivector_common.sh`: apply speed perturbation (only for the train set), 40-dim MFCC (see `conf/mfcc_hires.conf`) and i-vector feature extraction, and alignments from GMM with speed perturbation (only for the train set)
-    - input: `data/train (MFCC), data/test (MFCC), exp/tri3b (GMM)`
-    - output: `data/train_sp_hires (sp hires MFCC), data/tri3b_train_ali_sp (sp alignments), exp/nnet3/ivectors_train_sp_hires (i-vector), data/test_hires (sp hires MFCC)`
-  - 12. `steps/nnet3/chain/gen_topo.py`: create a new HMM topology that has two states (transition or loop) per phone for chain
-    - input: `data/lang (pronunciation dictionary)`
-    - output: `data/lang_chain`
-  - 13. `steps/align_fmllr_lats.sh`: get lattices with GMM and LMs
-    - input: `data/train_sp, data/lang data/tri3b`
-    - output: `exp/chain/tri3b_train_sp_lats` 
-  - 14. `steps/nnet3/chain/build_tree.sh`: create a new tree on the chain HMM topology
-    - input: `data/`
-  - 
-
-#### in Voxforge
-
-ditto
 
 ## debug
 

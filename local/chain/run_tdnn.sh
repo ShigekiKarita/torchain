@@ -60,7 +60,7 @@ remove_egs=true
 
 #decode options
 test_online_decoding=false  # if true, it will run the last decoding stage.
-
+lang_test=data/lang_test
 # End configuration section.
 echo "$0 $@"  # Print the command line for logging
 
@@ -315,9 +315,9 @@ if [ $stage -le 17 ]; then
   # as long as phones.txt was compatible.
 
   utils/lang/check_phones_compatible.sh \
-    data/lang/phones.txt $lang/phones.txt
+    $lang_test/phones.txt $lang/phones.txt
   utils/mkgraph.sh \
-    --self-loop-scale 1.0 data/lang \
+    --self-loop-scale 1.0 $lang_test \
     $tree_dir $tree_dir/graph_lang || exit 1;
 fi
 
@@ -353,7 +353,8 @@ if [ $stage -le 18 ]; then
     #   steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
     #     data/lang_test_bd_{tgpr,fgconst} \
     #    data/${data}_hires ${dir}/decode_${lmtype}_${data_affix}{,_fg} || exit 1
-    # ) || touch $dir/.error &
+          #
+      ) || touch $dir/.error &
   done
   wait
   [ -f $dir/.error ] && echo "$0: there was a problem while decoding" && exit 1
