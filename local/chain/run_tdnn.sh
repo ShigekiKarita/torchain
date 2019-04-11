@@ -27,6 +27,7 @@ set -e -o pipefail
 # First the options that are passed through to run_ivector_common.sh
 # (some of which are also used in this script directly).
 stage=0
+stage_ivector=0
 nj=30
 train_set=train_si284
 test_sets="test_dev93 test_eval92"
@@ -77,18 +78,8 @@ where "nvcc" is installed.
 EOF
 fi
 
-if [ $stage -le 11 ]; then
-    echo "Stage 11: ivector extraction"
-    local/nnet3/run_ivector_common.sh \
-        --stage 0 \
-        --use-ivector $use_ivector \
-        --nj $nj \
-        --train-set $train_set --test-sets ${test_sets} --gmm $gmm \
-        --num-threads-ubm $num_threads_ubm \
-        --nnet3-affix "$nnet3_affix" --use-speed-perturb $use_speed_perturb
-fi
-
 if $use_speed_perturb; then
+    nnet3_affix=${nnet3_affix}_sp
     train_sp=${train_set}_sp
     dir=exp/chain${nnet3_affix}/tdnn${affix}_sp
     # note: you don't necessarily have to change the treedir name
@@ -100,6 +91,18 @@ else
     dir=exp/chain${nnet3_affix}/tdnn${affix}
     tree_dir=exp/chain${nnet3_affix}/tree_a
 fi
+
+if [ $stage -le 11 ]; then
+    echo "Stage 11: ivector extraction"
+    local/nnet3/run_ivector_common.sh \
+        --stage $stage_ivector \
+        --use-ivector $use_ivector \
+        --nj $nj \
+        --train-set $train_set --test-sets ${test_sets} --gmm $gmm \
+        --num-threads-ubm $num_threads_ubm \
+        --nnet3-affix "$nnet3_affix" --use-speed-perturb $use_speed_perturb
+fi
+
 
 gmm_dir=exp/${gmm}
 ali_dir=exp/${gmm}_ali_${train_sp}

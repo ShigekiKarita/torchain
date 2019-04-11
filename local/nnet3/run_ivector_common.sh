@@ -71,18 +71,20 @@ if [ $stage -le 2 ]; then
   fi
 
   for datadir in ${train_sp} ${test_sets}; do
-    utils/copy_data_dir.sh data/$datadir data/${datadir}_hires
-  done
-
-  # do volume-perturbation on the training data prior to extracting hires
-  # features; this helps make trained nnets more invariant to test data volume.
-  utils/data/perturb_data_dir_volume.sh data/${train_sp}_hires
-
-  for datadir in ${train_sp} ${test_sets}; do
-    steps/make_mfcc.sh --nj $nj --mfcc-config conf/mfcc_hires.conf \
-      --cmd "$train_cmd" data/${datadir}_hires
-    steps/compute_cmvn_stats.sh data/${datadir}_hires
-    utils/fix_data_dir.sh data/${datadir}_hires
+    if [ -e data/${datadir}_hires ]; then
+      echo "${0}: WARNING data/${datadir}_hires, so skip making MFCC"
+    else
+      utils/copy_data_dir.sh data/$datadir data/${datadir}_hires
+      if [[ ${datadir} == ${train_sp} ]]; then
+        # do volume-perturbation on the training data prior to extracting hires
+        # features; this helps make trained nnets more invariant to test data volume.
+        utils/data/perturb_data_dir_volume.sh data/${train_sp}_hires
+      fi
+      steps/make_mfcc.sh --nj $nj --mfcc-config conf/mfcc_hires.conf \
+                         --cmd "$train_cmd" data/${datadir}_hires
+      steps/compute_cmvn_stats.sh data/${datadir}_hires
+      utils/fix_data_dir.sh data/${datadir}_hires
+    fi
   done
 fi
 
@@ -95,7 +97,12 @@ if $use_ivector; then
 
         # train a diagonal UBM using a subset of about a quarter of the data
         num_utts_total=$(wc -l <data/${train_sp}_hires/utt2spk)
-        num_utts=$[$num_utts_total/4]
+        # NOTE(karita): too small subset without speed perturbation (3 times smaller) will cause numrical error in UBM
+        if $use_speed_perturb; then
+            num_utts=$[$num_utts_total/4]
+        else
+            num_utts=$[$num_utts_total*3/4]
+        fi
         utils/data/subset_data_dir.sh data/${train_sp}_hires \
                                       $num_utts ${temp_data_root}/${train_sp}_hires_subset
 
