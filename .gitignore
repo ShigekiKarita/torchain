@@ -1,0 +1,13 @@
+*
+
+!*.sh
+!*.md
+!*.py
+
+!.gitignore
+
+!local
+!python/
+!cxx/
+
+
