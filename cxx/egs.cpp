@@ -143,7 +143,10 @@ public:
         // when selecting parts of matrices.
         feat_reader.Open(feat_rspecifier);
         supervision_reader.Open(supervision_rspecifier);
-        online_ivector_reader.Open(online_ivector_rspecifier);
+        if (!online_ivector_rspecifier.empty())
+        {
+            online_ivector_reader.Open(online_ivector_rspecifier);
+        }
         // TODO(karita) support this
         // RandomAccessBaseFloatVectorReader deriv_weights_reader(
         //     deriv_weights_rspecifier);
@@ -151,9 +154,18 @@ public:
 
     void close()
     {
-        feat_reader.Close();
-        supervision_reader.Close();
-        online_ivector_reader.Close();
+        if (feat_reader.IsOpen())
+        {
+            feat_reader.Close();
+        }
+        if (supervision_reader.IsOpen())
+        {
+            supervision_reader.Close();
+        }
+        if (online_ivector_reader.IsOpen())
+        {
+            online_ivector_reader.Close();
+        }
     }
 
     std::string to_string() const
