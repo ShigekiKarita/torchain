@@ -9,5 +9,5 @@
 !local
 !python/
 !cxx/
-
+!test/
 

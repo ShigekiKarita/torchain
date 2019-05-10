@@ -2,8 +2,10 @@ import os
 from setuptools import setup
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 
-# TODO(karita) automate conf
+
 KALDI_ROOT = os.path.realpath(os.environ.get("KALDI_ROOT", "../../../"))
+assert os.path.exists(KALDI_ROOT + "/src/lib/libkaldi-chain.so"), "need to set $KALDI_ROOT"
+
 
 setup(
     name="torchain",
@@ -17,9 +19,11 @@ setup(
                 "-isystem" + KALDI_ROOT + "/src",
                 "-isystem" + KALDI_ROOT + "/tools/openfst/include",
             ],
-            extra_link_args=["-L" + KALDI_ROOT + "/src/lib",
-                             "-Wl,-rpath=" + KALDI_ROOT + "/src/lib",
-                             "-lkaldi-chain", "-lkaldi-nnet3"]
+            extra_link_args=[
+                "-L" + KALDI_ROOT + "/src/lib",
+                "-Wl,-rpath=" + KALDI_ROOT + "/src/lib",
+                "-lkaldi-chain", "-lkaldi-nnet3", "-lkaldi-util"
+            ]
         ),
     ],
     cmdclass={"build_ext": BuildExtension}

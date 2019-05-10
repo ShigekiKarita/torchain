@@ -5,6 +5,10 @@
 - python 3.7
 - pytorch 1.1.0
 - cuda 10.0 (recommended)
+- gcc 4.8 and 4.9 (recommended)
+- kaldi
+
+NOTE: If you are using anaconda pytorch binary and newer GCC (e.g., v5+), you have to **build pytorch from source** with it. This is because prebuilt pytorch requires `-D_GLIBCXX_USE_CXX11_ABI=0` for [C++03 ABI compatibility](https://stackoverflow.com/questions/45417707/glibcxx-use-cxx11-abi-gcc-4-8-and-abi-compatibility), while kaldi and openfst do not seem to support this hack.
 
 ## how to create test files
 
