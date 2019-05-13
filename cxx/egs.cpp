@@ -38,6 +38,7 @@ TODO(karita): support consistent subsampling factor between chain-get-supervisio
 --left-tolerance=5:
 --right-tolerance=5:
  */
+#include <type_traits>
 #include <sstream>
 #include <memory>
 
@@ -54,6 +55,61 @@ TODO(karita): support consistent subsampling factor between chain-get-supervisio
 
 using namespace kaldi;
 using namespace kaldi::nnet3;
+
+// TODO(karita): move these funcitons to new module
+static_assert(std::is_same<BaseFloat, float>::value ||
+              std::is_same<BaseFloat, double>::value,
+              "kaldi::BaseFloat should be float or double");
+
+constexpr at::ScalarType atBaseFloat = std::is_same<BaseFloat, float>::value ? at::kFloat : at::kDouble;
+
+
+template <template<typename> typename M>
+M<BaseFloat> make_submatrix(torch::Tensor t)
+{
+    KALDI_ASSERT(t.dim() == 2);
+    KALDI_ASSERT(t.scalar_type() == atBaseFloat);
+    KALDI_ASSERT(t.device() ==
+                 (std::is_base_of<M<BaseFloat>, CuMatrixBase<BaseFloat>>::value
+                  ? at::kCUDA : at::kCPU));
+    return M<BaseFloat>(t.data<BaseFloat>(),
+                        t.size(0),
+                        t.size(1),
+                        t.stride(0));
+}
+
+torch::Tensor make_tensor(const kaldi::GeneralMatrix& mat)
+{
+    auto opt = at::TensorOptions().device(at::kCPU).dtype(atBaseFloat);
+    auto ret = torch::empty({mat.NumRows(), mat.NumCols()}, opt);
+    auto retm = make_submatrix<SubMatrix>(ret);
+    mat.CopyToMat(&retm);
+    return ret;
+}
+
+
+struct TorchainExample
+{
+    std::string key;
+    std::vector<chain::Supervision> outputs; // e.g., GMM phone alignments
+    std::vector<torch::Tensor> inputs; // e.g.,  mfcc and i-vector
+
+    TorchainExample(const NnetChainExample& eg, const std::string& key)
+        : key(key)
+    {
+        // TODO(karita): should we support multiple output?
+        for (auto&& o : eg.outputs)
+        {
+            this->outputs.push_back(o.supervision);
+        }
+
+        // convert kaldi::GeneralMatrix to torch::Tensor
+        for (auto&& i : eg.inputs)
+        {
+            this->inputs.push_back(make_tensor(i.features));
+        }
+    }
+};
 
 
 /**
@@ -122,7 +178,7 @@ static bool ProcessFile(const TransitionModel *trans_mdl,
                         const std::string &utt_id,
                         bool compress,
                         UtteranceSplitter *utt_splitter,
-                        std::vector<NnetChainExample>& example_writer) {
+                        std::vector<TorchainExample>& example_writer) {
   KALDI_ASSERT(supervision.num_sequences == 1);
   int32 num_input_frames = feats.NumRows(),
       num_output_frames = supervision.frames_per_sequence;
@@ -259,7 +315,7 @@ static bool ProcessFile(const TransitionModel *trans_mdl,
     std::string key = os.str(); // key is <utt_id>-<frame_id>
 
     // example_writer->Write(key, nnet_chain_eg);
-    example_writer.push_back(nnet_chain_eg);
+    example_writer.emplace_back(nnet_chain_eg, key);
   }
   return true;
 }
@@ -413,9 +469,9 @@ public:
     }
 
     /// return false only if data loading failed
-    std::vector<Example> load(const std::string& key, bool close=true)
+    std::vector<TorchainExample> load(const std::string& key, bool close=true)
     {
-        std::vector<Example> dst;
+        std::vector<TorchainExample> dst;
         this->open();
 
         if (!feat_reader.HasKey(key))
@@ -521,8 +577,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             );
 
     // TODO(karita): implement __repr__
-    py::class_<Example>(m, "Example", "kaldi::nnet3::NnetChainExample")
-        .def(py::init());
+    py::class_<TorchainExample>(m, "TorchainExample")
+        .def_readwrite("key", &TorchainExample::key) // std::vector<NnetIo>
+        .def_readwrite("inputs", &TorchainExample::inputs) // std::vector<NnetIo>
+        .def_readwrite("outputs", &TorchainExample::outputs); // std::vector<NnetChainSupervision>
 
 
     py::class_<GetEgs>(m, "GetEgs", "class wrapped kaldi/src/chainbin/nnet3-chain-get-egs.cc")

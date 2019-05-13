@@ -12,9 +12,13 @@ def test_ark():
 
     get_egs = torchain.GetEgs(feat="ark,s,cs:" + feat, supervision="ark:" + supv)
     # egs = [] # torchain.Example()
+    N = 1000
     egs = get_egs.load("1028-20100710-hne-ar-02")
     print(egs)
     assert len(egs) > 0
+
+    print(egs[0].key)
+    print(egs[0].inputs[0])
 
 
 if __name__ == "__main__":
