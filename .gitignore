@@ -3,6 +3,7 @@
 !*.sh
 !*.md
 !*.py
+!*.cfg
 
 !.gitignore
 

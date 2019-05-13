@@ -11,6 +11,7 @@ setup(
     name="torchain",
     packages=["torchain"],
     package_dir={"": "python"},
+    # build setup
     ext_modules=[
         CppExtension(
             name="torchain.egs",
@@ -26,5 +27,8 @@ setup(
             ]
         ),
     ],
-    cmdclass={"build_ext": BuildExtension}
+    cmdclass={"build_ext": BuildExtension},
+    # test setup
+    setup_requires=["pytest-runner"],
+    tests_require=["pytest"],
 )

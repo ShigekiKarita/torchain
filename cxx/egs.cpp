@@ -107,7 +107,7 @@ using namespace kaldi::nnet3;
      @param [out]  utt_splitter       Pointer to UtteranceSplitter object,
                                       which helps to split an utterance into
                                       chunks. This also stores some stats.
-     @param [out]  example_writer     Pointer to egs writer.
+     @param [out]  example_writer     cleared at first. then chunk level examples are pushed.
 
 **/
 
@@ -122,7 +122,7 @@ static bool ProcessFile(const TransitionModel *trans_mdl,
                         const std::string &utt_id,
                         bool compress,
                         UtteranceSplitter *utt_splitter,
-                        NnetChainExampleWriter *example_writer) {
+                        std::vector<NnetChainExample>& example_writer) {
   KALDI_ASSERT(supervision.num_sequences == 1);
   int32 num_input_frames = feats.NumRows(),
       num_output_frames = supervision.frames_per_sequence;
@@ -164,6 +164,7 @@ static bool ProcessFile(const TransitionModel *trans_mdl,
 
   chain::SupervisionSplitter sup_splitter(supervision);
 
+  example_writer.clear();
   for (size_t c = 0; c < chunks.size(); c++) {
     ChunkTimeInfo &chunk = chunks[c];
 
@@ -257,7 +258,8 @@ static bool ProcessFile(const TransitionModel *trans_mdl,
 
     std::string key = os.str(); // key is <utt_id>-<frame_id>
 
-    example_writer->Write(key, nnet_chain_eg);
+    // example_writer->Write(key, nnet_chain_eg);
+    example_writer.push_back(nnet_chain_eg);
   }
   return true;
 }
@@ -268,20 +270,24 @@ using Config = kaldi::nnet3::ExampleGenerationConfig;
 using Example = kaldi::nnet3::NnetChainExample;
 
 
+/// TODO(karita): add option not to log in nnet-example-utils.cc
 /// helper class derived from nnet3-chain-get-egs.cc
 class GetEgs
 {
 private:
     const std::string feat_rspecifier, supervision_rspecifier,
         normalization_fst_rxfilename, online_ivector_rspecifier,
-        deriv_weights_rspecifier;
+        deriv_weights_rspecifier,
+        trans_mdl_rxfilename;
 
-    fst::StdVectorFst normalization_fst;
     // kaldi resource handlers
-    kaldi::RandomAccessBaseFloatMatrixReader feat_reader;
+    kaldi::RandomAccessGeneralMatrixReader feat_reader;
     kaldi::chain::RandomAccessSupervisionReader supervision_reader;
     kaldi::RandomAccessBaseFloatMatrixReader online_ivector_reader;
     kaldi::RandomAccessBaseFloatVectorReader deriv_weights_reader;
+
+    std::unique_ptr<TransitionModel> trans_mdl_ptr;
+    fst::StdVectorFst normalization_fst;
 
     // chunk setting
     Config eg_config;
@@ -290,14 +296,14 @@ private:
 public:
 
     // options outside ExampleGenerationConfig
-    // TODO(karita): move this to ctor and pybind
+    // TODO(karita): bind this readwrite attr
     bool compress = true;
     int32 length_tolerance = 100;
     int32 online_ivector_period = 1;
     int32 supervision_length_tolerance = 1;
     BaseFloat normalization_fst_scale = 1.0;
     int32 srand_seed = 0;
-    std::string trans_mdl_rxfilename;
+
 
     // setup resource
     GetEgs(
@@ -305,20 +311,24 @@ public:
         const std::string& supervision_rspecifier,
         const std::string& normalization_fst_rxfilename,
         const std::string& online_ivector_rspecifier,
-        const std::string& deriv_weights_rspecifier
+        const std::string& deriv_weights_rspecifier,
+        const std::string& trans_mdl_rxfilename
         )
         : feat_rspecifier(feat_rspecifier),
           supervision_rspecifier(supervision_rspecifier),
           normalization_fst_rxfilename(normalization_fst_rxfilename),
           online_ivector_rspecifier(online_ivector_rspecifier),
-          deriv_weights_rspecifier(deriv_weights_rspecifier)
+          deriv_weights_rspecifier(deriv_weights_rspecifier),
+          trans_mdl_rxfilename(trans_mdl_rxfilename)
      {
-         // default
-         eg_config.left_context = 29;
-         eg_config.right_context = 29;
-         eg_config.num_frames_str = "140,100,160";
-         eg_config.frame_subsampling_factor = 3;
-         eg_config.ComputeDerived();
+         // default config
+         Config config;
+         config.left_context = 29;
+         config.right_context = 29;
+         config.num_frames_str = "140,100,160";
+         config.frame_subsampling_factor = 3;
+         config.num_frames_overlap = 0;
+         this->set_config(config);
      }
 
     bool is_open() const
@@ -338,6 +348,11 @@ public:
                 KALDI_ERR << "Invalid scale on normalization FST; must be > 0.0";
             if (normalization_fst_scale != 1.0)
                 ApplyProbabilityScale(normalization_fst_scale, &normalization_fst);
+        }
+        if (!trans_mdl_rxfilename.empty())
+        {
+            this->trans_mdl_ptr.reset(new TransitionModel);
+            ReadKaldiObject(trans_mdl_rxfilename, trans_mdl_ptr.get());
         }
 
         // Read as GeneralMatrix so we don't need to un-compress and re-compress
@@ -398,22 +413,22 @@ public:
     }
 
     /// return false only if data loading failed
-    bool load(const std::string& key, Example& dst, bool close=true)
+    std::vector<Example> load(const std::string& key, bool close=true)
     {
+        std::vector<Example> dst;
         this->open();
 
-        // TODO(karita): copy ProcessFile(...) in nnet3-chain-get-egs.cc here
         if (!feat_reader.HasKey(key))
         {
             KALDI_WARN << "No feature for key " << key;
-            return false;
+            return {};
         }
         const auto& feats = feat_reader.Value(key);
 
         if (!supervision_reader.HasKey(key))
         {
             KALDI_WARN << "No pdf-level posterior for key " << key;
-            return false;
+            return {};
         }
         else
         {
@@ -424,7 +439,7 @@ public:
                 if (!online_ivector_reader.HasKey(key))
                 {
                     KALDI_WARN << "No iVectors for utterance " << key;
-                    return false;
+                    return {};
                 }
                 else
                 {
@@ -440,16 +455,15 @@ public:
                 KALDI_WARN << "Length difference between feats " << feats.NumRows()
                            << " and iVectors " << online_ivector_feats->NumRows()
                            << "exceeds tolerance " << length_tolerance;
-                return false;
+                return {};
             }
 
-            // TODO(karita) support this
             const Vector<BaseFloat> *deriv_weights = nullptr;
             if (!deriv_weights_rspecifier.empty())
             {
                 if (!deriv_weights_reader.HasKey(key)) {
                     KALDI_WARN << "No deriv weights for utterance " << key;
-                    return false;
+                    return {};
                 }
                 else
                 {
@@ -459,18 +473,18 @@ public:
                 }
             }
 
-            // if (!ProcessFile(trans_mdl_ptr, normalization_fst, feats,
-            //                  online_ivector_feats, online_ivector_period,
-            //                  supervision, deriv_weights, supervision_length_tolerance,
-            //                  key, compress,
-            //                  &utt_splitter, &example_writer))
-            // {
-            //     return false;
-            // }
-            // TODO RAII?
+            if (!ProcessFile(trans_mdl_ptr.get(), normalization_fst, feats,
+                             online_ivector_feats, online_ivector_period,
+                             supervision, deriv_weights, supervision_length_tolerance,
+                             key, compress,
+                             utt_splitter.get(), dst))
+            {
+                return {};
+            }
+            // TODO(karita) RAII?
         }
         if (close) this->close();
-        return true;
+        return dst;
     }
 };
 
@@ -506,14 +520,22 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
              }
             );
 
+    // TODO(karita): implement __repr__
     py::class_<Example>(m, "Example", "kaldi::nnet3::NnetChainExample")
         .def(py::init());
 
+
     py::class_<GetEgs>(m, "GetEgs", "class wrapped kaldi/src/chainbin/nnet3-chain-get-egs.cc")
-        .def(py::init<const std::string&, const std::string&, const std::string&, const std::string&, const std::string&>(),
-             py::arg("feat"), py::arg("supervision"), py::arg("normalization_fst") = "", py::arg("online_ivector") = "", py::arg("deriv_weights") = "")
+        .def(py::init<const std::string&, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&>(),
+             py::arg("feat"),
+             py::arg("supervision"),
+             py::arg("normalization_fst") = "",
+             py::arg("online_ivector") = "",
+             py::arg("deriv_weights") = "",
+             py::arg("trans_mdl") = ""
+             )
         .def("load", &GetEgs::load,
-             py::arg("uttid"), py::arg("dst"), py::arg("close") = true)
+             py::arg("uttid"), py::arg("close") = true)
         .def_property("config", &GetEgs::get_config, &GetEgs::set_config)
         .def_property("config", &GetEgs::get_config, &GetEgs::set_config)
         .def("__repr__", &GetEgs::to_string);
