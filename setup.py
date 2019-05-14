@@ -26,6 +26,20 @@ setup(
                 "-lkaldi-chain", "-lkaldi-nnet3", "-lkaldi-util"
             ]
         ),
+        # TODO(karita): CUDAExtention?
+        CppExtension(
+            name="torchain.train",
+            sources=["cxx/train.cpp"],
+            extra_compile_args=[
+                "-isystem" + KALDI_ROOT + "/src",
+                "-isystem" + KALDI_ROOT + "/tools/openfst/include",
+            ],
+            extra_link_args=[
+                "-L" + KALDI_ROOT + "/src/lib",
+                "-Wl,-rpath=" + KALDI_ROOT + "/src/lib",
+                "-lkaldi-chain", "-lkaldi-nnet3", "-lkaldi-util"
+            ]
+        ),
     ],
     cmdclass={"build_ext": BuildExtension},
     # test setup

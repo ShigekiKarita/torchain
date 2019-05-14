@@ -38,13 +38,15 @@ TODO(karita): support consistent subsampling factor between chain-get-supervisio
 --left-tolerance=5:
 --right-tolerance=5:
  */
-#include <type_traits>
+
 #include <sstream>
 #include <memory>
+#include <unordered_map>
 
+// third party
 #include <torch/extension.h>
 
-// kaldi deps
+// kaldi
 #include "base/kaldi-common.h"
 #include "util/common-utils.h"
 #include "hmm/transition-model.h"
@@ -53,46 +55,17 @@ TODO(karita): support consistent subsampling factor between chain-get-supervisio
 #include "nnet3/nnet-chain-example.h"
 #include "nnet3/nnet-example-utils.h"
 
+#include "./tensor.hpp"
+
 using namespace kaldi;
 using namespace kaldi::nnet3;
-
-// TODO(karita): move these funcitons to new module
-static_assert(std::is_same<BaseFloat, float>::value ||
-              std::is_same<BaseFloat, double>::value,
-              "kaldi::BaseFloat should be float or double");
-
-constexpr at::ScalarType atBaseFloat = std::is_same<BaseFloat, float>::value ? at::kFloat : at::kDouble;
-
-
-template <template<typename> typename M>
-M<BaseFloat> make_submatrix(torch::Tensor t)
-{
-    KALDI_ASSERT(t.dim() == 2);
-    KALDI_ASSERT(t.scalar_type() == atBaseFloat);
-    KALDI_ASSERT(t.device() ==
-                 (std::is_base_of<M<BaseFloat>, CuMatrixBase<BaseFloat>>::value
-                  ? at::kCUDA : at::kCPU));
-    return M<BaseFloat>(t.data<BaseFloat>(),
-                        t.size(0),
-                        t.size(1),
-                        t.stride(0));
-}
-
-torch::Tensor make_tensor(const kaldi::GeneralMatrix& mat)
-{
-    auto opt = at::TensorOptions().device(at::kCPU).dtype(atBaseFloat);
-    auto ret = torch::empty({mat.NumRows(), mat.NumCols()}, opt);
-    auto retm = make_submatrix<SubMatrix>(ret);
-    mat.CopyToMat(&retm);
-    return ret;
-}
 
 
 struct TorchainExample
 {
     std::string key;
-    std::vector<chain::Supervision> outputs; // e.g., GMM phone alignments
-    std::vector<torch::Tensor> inputs; // e.g.,  mfcc and i-vector
+    std::unordered_map<std::string, chain::Supervision> outputs; // e.g., GMM phone alignments
+    std::unordered_map<std::string, torch::Tensor> inputs; // e.g.,  mfcc and i-vector
 
     TorchainExample(const NnetChainExample& eg, const std::string& key)
         : key(key)
@@ -100,13 +73,13 @@ struct TorchainExample
         // TODO(karita): should we support multiple output?
         for (auto&& o : eg.outputs)
         {
-            this->outputs.push_back(o.supervision);
+            this->outputs[o.name] = o.supervision;
         }
 
         // convert kaldi::GeneralMatrix to torch::Tensor
         for (auto&& i : eg.inputs)
         {
-            this->inputs.push_back(make_tensor(i.features));
+            this->inputs[i.name] = torchain::copy_tensor(i.features);
         }
     }
 };
