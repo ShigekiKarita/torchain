@@ -1,0 +1,20 @@
+enerating MFCC subset
+utils/subset_data_dir.sh: reducing #utt from 59039 to 10
+subset-feats --n=10 ark:- ark:- 
+apply-cmvn --norm-means=false --norm-vars=false --utt2spk=ark:.torchain/feat_hires/utt2spk scp:.torchain/feat_hires/cmvn.scp scp:.torchain/feat_hires/feats.scp ark:- 
+LOG (apply-cmvn[5.5.0-76bd]:main():apply-cmvn.cc:81) Copied 10 utterances.
+generating supervision on subset
+utils/subset_data_dir.sh: reducing #utt from 59039 to 10
+steps/align_fmllr_lats.sh --nj 1 --cmd slurm.pl .torchain/feat data/lang exp/tri3b .torchain/lat
+steps/align_fmllr_lats.sh: feature type is lda
+steps/align_fmllr_lats.sh: compiling training graphs
+steps/align_fmllr_lats.sh: aligning data in .torchain/feat using exp/tri3b/final.alimdl and speaker-independent features.
+steps/align_fmllr_lats.sh: computing fMLLR transforms
+steps/align_fmllr_lats.sh: generating lattices containing alternate pronunciations.
+steps/align_fmllr_lats.sh: done generating lattices from training transcripts.
+1 warnings in .torchain/lat/log/align_pass1.*.log
+1 warnings in .torchain/lat/log/generate_lattices.*.log
+chain-get-supervision --lattice-input=true --frame-subsampling-factor=3 --right-tolerance=5 --left-tolerance=5 exp/chain_simple/tdnn1g/tree exp/chain_simple/tdnn1g/0.trans_mdl ark:- ark:- 
+lattice-align-phones --replace-output-symbols=true exp/chain_simple/tri3b_train_lats/final.mdl 'ark:gunzip -c .torchain/lat/lat.1.gz |' ark:- 
+LOG (lattice-align-phones[5.5.0-76bd]:main():lattice-align-phones.cc:104) Successfully aligned 10 lattices; 0 had errors.
+LOG (chain-get-supervision[5.5.0-76bd]:main():chain-get-supervision.cc:150) Generated chain supervision information for 10 utterances, errors on 0
