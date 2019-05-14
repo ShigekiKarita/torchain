@@ -30,6 +30,6 @@ echo "generating supervision on subset"
 utils/subset_data_dir.sh --first data/train 10 $tmpdir/feat
 steps/align_fmllr_lats.sh --nj 1 --cmd "$train_cmd" $tmpdir/feat data/lang exp/tri3b $tmpdir/lat
 
-lattice-align-phones --replace-output-symbols=true exp/chain_simple/tri3b_train_lats/final.mdl "ark:gunzip -c $tmpdir/lat/lat.1.gz |" ark:- | chain-get-supervision --lattice-input=true --frame-subsampling-factor=3 --right-tolerance=5 --left-tolerance=5 exp/chain_simple/tdnn1g/tree exp/chain_simple/tdnn1g/0.trans_mdl ark:- ark:- > $outdir/supevision.ark
+lattice-align-phones --replace-output-symbols=true exp/chain_simple/tri3b_train_lats/final.mdl "ark:gunzip -c $tmpdir/lat/lat.1.gz |" ark:- | chain-get-supervision --lattice-input=true --frame-subsampling-factor=3 --right-tolerance=5 --left-tolerance=5 exp/chain_simple/tdnn1g/tree exp/chain_simple/tdnn1g/0.trans_mdl ark:- ark:- > $outdir/supervision.ark
 
 rm -rf $tmpdir
