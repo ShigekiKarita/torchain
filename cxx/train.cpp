@@ -1,3 +1,5 @@
+#include <cmath>
+
 // third party
 #include <torch/extension.h>
 
@@ -19,18 +21,17 @@ denominator_graph(
 
 struct TorchainResult
 {
-    BaseFloat objf;
-    BaseFloat l2_term;
-    BaseFloat weight;
+    BaseFloat objf = NAN;
+    BaseFloat l2_term = NAN;
+    BaseFloat weight = NAN;
+    BaseFloat xent = NAN;
 };
 
-void chain_loss(
+TorchainResult chain_loss(
     // inputs
     const kaldi::chain::DenominatorGraph& den_graph,
     const kaldi::chain::Supervision& supervision,
     torch::Tensor nnet_output_tensor, // CUDA
-    // outputs
-    TorchainResult& result,
     // grads CUDA
     torch::Tensor nnet_output_deriv_tensor,
     torch::Tensor xent_output_deriv_tensor,
@@ -38,6 +39,7 @@ void chain_loss(
     const kaldi::chain::ChainTrainingOptions& opts)
 {
     // TODO(karita):
+    TorchainResult result;
     // set_kaldi_device(nnet_output_ptr);
     auto nnet_output = torchain::make_cusubmatrix(nnet_output_tensor);
     auto nnet_output_deriv = torchain::make_cusubmatrix(nnet_output_deriv_tensor);
@@ -51,6 +53,7 @@ void chain_loss(
     {
         xent_output_deriv_tensor.copy_(torchain::ref_tensor(xent_deriv));
     }
+    return result;
 }
 
 
@@ -64,7 +67,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
     py::class_<TorchainResult>(m, "TorchainResult")
         .def_readwrite("objf", &TorchainResult::objf)
         .def_readwrite("l2_term", &TorchainResult::l2_term)
-        .def_readwrite("weight", &TorchainResult::weight);
+        .def_readwrite("weight", &TorchainResult::weight)
+        .def_readwrite("xent", &TorchainResult::xent);
 
     py::class_<kaldi::chain::ChainTrainingOptions>(m, "ChainTrainingOptions")
         .def(py::init<>())
