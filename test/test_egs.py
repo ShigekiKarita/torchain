@@ -5,8 +5,8 @@ import torchain
 cwd = os.path.dirname(os.path.realpath(__file__))
 
 def test_ark():
-    feat = cwd + "/mfcc1.ark"
-    supv = cwd + "/supervision1.ark"
+    feat = cwd + "/res/mfcc1.ark"
+    supv = cwd + "/res/supervision1.ark"
     for path in (feat, supv):
         assert os.path.exists(path), "ERROR: download ark files into test/ from https://github.com/ShigekiKarita/voxforge-chain/releases/tag/pybind-test"
 

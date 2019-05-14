@@ -1,6 +1,4 @@
 import torch
 
-from torchain.egs import GetEgs, Config, TorchainExample
-
-
-# assert False
+from .egs import *
+from .train import *

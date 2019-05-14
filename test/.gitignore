@@ -3,5 +3,6 @@
 !*/
 !*.py
 !*.pyi
+!*.sh
 
 !.gitignore

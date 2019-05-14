@@ -15,7 +15,7 @@ NOTE: If you are using anaconda pytorch binary and newer GCC (e.g., v5+), you ha
 - mfcc1.ark
 
 ```bash
-utils/filter_scp.pl --exclude exp/chain_simple/tdnn1g/egs/valid_uttlist data/train_hires/split100/1/feats.scp | apply-cmvn --norm-means=false --norm-vars=false --utt2spk=ark:data/train_hires/split100/1/utt2spk scp:data/train_hires/split100/1/cmvn.scp scp:- ark:- > test/mfcc1.ark
+utils/filter_scp.pl --exclude exp/chain_simple/tdnn1g/egs/valid_uttlist data/train_hires/split100/1/feats.scp | apply-cmvn --norm-means=false --norm-vars=false --utt2spk=ark:data/train_hires/split100/1/utt2spk scp:data/train_hires/split100/1/cmvn.scp scp:- ark:- | subset-feats --n 10 > test/res/mfcc.ark
 ```
 
 - supervision1.ark
