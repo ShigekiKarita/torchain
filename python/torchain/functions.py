@@ -1,30 +1,33 @@
 import torch
 
-from torchain.train import chain_loss, ChainTrainingOptions
+from torchain.train import _chain_loss_impl, ChainTrainingOptions
 
 
 class _ChainLoss(torch.autograd.Function):
-    def __init__(self, den_graph, l2_regularize=0.0,
+    def __init__(self, supervision, den_graph, l2_regularize=0.0,
                  leaky_hmm_coefficient=1e-5, xent_regularize=0.0):
         super().__init__()
+        self.supervision = supervision
         self.den_graph = den_graph
         self.opt = ChainTrainingOptions()
         self.opt.l2_regularize = l2_regularize
         self.opt.leaky_hmm_coefficient = leaky_hmm_coefficient
         self.opt.xent_regularize = xent_regularize
-        self.output_deriv = torch.tensor()
-        self.xent_deriv = torch.tensor()
+        self.output_deriv = torch.Tensor()
+        self.xent_deriv = torch.Tensor()
 
-    def forward(self, nnet_output, supervision):
+    def forward(self, nnet_output):
         self.output_deriv = torch.empty_like(nnet_output)
-        self.result = chain_loss(self.den_graph, supervision, nnet_output,
-                            self.output_deriv, self.xent_deriv, self.opt)
+        # if self.opt.xent_regularize != 0.0:
+        self.xent_deriv = torch.empty_like(nnet_output)
+        self.result = _chain_loss_impl(self.den_graph, self.supervision, nnet_output,
+                                       self.output_deriv, self.xent_deriv, self.opt)
         # TODO(karita) what?
         # https://github.com/kaldi-asr/kaldi/blob/182f3829e1afdb7fe94eafe24ea066b328d2cd9f/src/nnet3/nnet-chain-training.cc#L320
         return nnet_output.new([-self.result.objf / self.result.weight])
 
     def backward(self, grad_output):
-        return self.output_deriv, None
+        return self.output_deriv
 
 
 def to2d(x):
@@ -39,9 +42,10 @@ def to2d(x):
 
 def chain_loss(nnet_output, supervision, den_graph, xent_output=None,
                l2_regularize=0.0, leaky_hmm_coefficient=1e-5, xent_regularize=0.0):
-    func = _ChainLoss(den_graph, l2_regularize, leaky_hmm_coefficient, xent_regularize)
+    func = _ChainLoss(supervision, den_graph,
+                      l2_regularize, leaky_hmm_coefficient, xent_regularize)
     nnet_output = to2d(nnet_output)
-    loss = func(nnet_output, supervision)
+    loss = func(nnet_output)
     if xent_regularize != 0.0 and xent_output is not None:
         xent_output = to2d(xent_output)
         xent = xent_output.matmul(func.xent_deriv.transposed()).trace()

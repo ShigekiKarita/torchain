@@ -2,11 +2,37 @@
 
 // third party
 #include <torch/extension.h>
+#include <THC/THC.h>
 
 // kaldi
+#include "./cu-device-patched.h"
 #include "chain/chain-training.h"
 
 #include "./tensor.hpp"
+
+
+extern "C" {
+    // this symbol will be resolved automatically from PyTorch libs
+    extern THCState *state;
+}
+
+void set_kaldi_device(torch::Tensor t) {
+    // NOTE: need to patch kaldi for making all the private fields
+    //       e.g., active_gpu_id_ public
+    auto gpu_id = t.device().index();
+    auto& device = kaldi::CuDevice::this_thread_device_;
+    device.initialized_ = true;
+    // if (device.device_id_ == gpu_id) return; // maybe no need to reset
+    // kaldi::CuDevice::Instantiate().AllowMultithreading();
+    device.device_id_ = gpu_id;
+    device.device_id_copy_ = gpu_id;
+    // device.multi_threaded_ = true; // TODO(karita)
+    device.cublas_handle_ = THCState_getCurrentBlasHandle(state);
+    device.cusparse_handle_ = THCState_getCurrentSparseHandle(state);
+    // device.properties_ = *THCState_getCurrentDeviceProperties(state);
+    KALDI_ASSERT(kaldi::CuDevice::Instantiate().Enabled());
+}
+
 
 kaldi::chain::DenominatorGraph
 denominator_graph(
@@ -38,9 +64,9 @@ TorchainResult chain_loss(
     // hyper params
     const kaldi::chain::ChainTrainingOptions& opts)
 {
-    // TODO(karita):
     TorchainResult result;
-    // set_kaldi_device(nnet_output_ptr);
+    cudaDeviceSynchronize();
+    set_kaldi_device(nnet_output_tensor);
     auto nnet_output = torchain::make_cusubmatrix(nnet_output_tensor);
     auto nnet_output_deriv = torchain::make_cusubmatrix(nnet_output_deriv_tensor);
 
@@ -62,6 +88,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
     // TODO(karita): docstring
 
+    py::class_<kaldi::chain::DenominatorGraph>(m, "DenominatorGraph", "kaldi::chain::DenominatorGraph")
+        .def("num_states", &kaldi::chain::DenominatorGraph::NumStates)
+        .def("num_pdfs", &kaldi::chain::DenominatorGraph::NumPdfs);
+
     m.def("denominator_graph", &denominator_graph, "load kaldi::chain::DenominatorGraph");
 
     py::class_<TorchainResult>(m, "TorchainResult")
@@ -72,24 +102,18 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
     py::class_<kaldi::chain::ChainTrainingOptions>(m, "ChainTrainingOptions")
         .def(py::init<>())
-        // TODO(karita)
-        // .def(py::init<kaldi::BaseFloat, kaldi::BaseFloat, kaldi::BaseFloat>(),
-        //          py::arg("l2_regularize") = 0.0,
-        //          py::arg("leaky_hmm_coefficient") = 1.0e-05,
-        //          py::arg("xent_regularize") = 0.0
-        //          )
         .def_readwrite("l2_regularize",
                        &kaldi::chain::ChainTrainingOptions::l2_regularize,
                        "l2 regularization "
                        "constant for 'chain' training, applied to the output "
                        "of the neural net.")
-        .def_readwrite("leaky-hmm-coefficient",
+        .def_readwrite("leaky_hmm_coefficient",
                        &kaldi::chain::ChainTrainingOptions::leaky_hmm_coefficient, "Coefficient "
                        "that allows transitions from each HMM state to each other "
                        "HMM state, to ensure gradual forgetting of context (can "
                        "improve generalization).  For numerical reasons, may not be "
                        "exactly zero.")
-        .def_readwrite("xent-regularize",
+        .def_readwrite("xent_regularize",
                        &kaldi::chain::ChainTrainingOptions::xent_regularize,
                        "Cross-entropy "
                        "regularization constant for 'chain' training.  If "
@@ -99,6 +123,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
 
     // TODO(karita): keyword args
-    m.def("chain_loss", &chain_loss, "wrapper of kaldi::chain::ComputeChainObjfAndDeriv");
+    m.def("_chain_loss_impl", &chain_loss, "wrapper of kaldi::chain::ComputeChainObjfAndDeriv");
 
 }

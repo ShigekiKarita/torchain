@@ -1,42 +1,5 @@
 /**
 python module to emulate nnet3-chain-get-egs.cc that creates chunk-level feat/supervision/i-vector (NnetChainExample)
-
-TODO(karita): split source code
-
-NOTE: on nnet3-chain-get-egs.cc
-
-Usage:  nnet3-chain-get-egs [options] [<normalization-fst>] <features-rspecifier> <chain-supervision-rspecifier> <egs-wspecifier>
-
-
-Example: nnet3-chain-get-egs
-# [options]
---srand=$[1+0] --left-context=29 --right-context=29 --num-frames=140,100,160 --frame-subsampling-factor=3 --compress=true --num-frames-overlap=0
-# <features-rspecifier>
-"ark,s,cs:utils/filter_scp.pl --exclude exp/chain_simple/tdnn1g/egs/valid_uttlist data/train_hires/split100/1/feats.scp | apply-cmvn --norm-means=false --norm-vars=false --utt2spk=ark:data/train_hires/split100/1/utt2spk scp:data/train_hires/split100/1/cmvn.scp scp:- ark:- |"
-# <chain-supervision-rspecifier>
-"ark,s,cs:lattice-align-phones --replace-output-symbols=true exp/chain_simple/tri3b_train_lats/final.mdl \"ark:gunzip -c exp/chain_simple/tri3b_train_lats/lat.1.gz |\" ark:- | chain-get-supervision --lattice-input=true --frame-subsampling-factor=3 --right-tolerance=5 --left-tolerance=5 exp/chain_simple/tdnn1g/tree exp/chain_simple/tdnn1g/0.trans_mdl ark:- ark:-"
-# <egs-wspecifier>
-ark:-
-
-NOTE(karita): Maybe our wrapper takes these essential args at first
-[required]
-<feat> hi-res MFCC or something
-e.g., "ark,s,cs:utils/filter_scp.pl --exclude exp/chain_simple/tdnn1g/egs/valid_uttlist data/train_hires/split100/1/feats.scp | apply-cmvn --norm-means=false --norm-vars=false --utt2spk=ark:data/train_hires/split100/1/utt2spk scp:data/train_hires/split100/1/cmvn.scp scp:- ark:- |"
-<supervision> subsampled GMM alignments
-e.g., "ark,s,cs:lattice-align-phones --replace-output-symbols=true exp/chain_simple/tri3b_train_lats/final.mdl \"ark:gunzip -c exp/chain_simple/tri3b_train_lats/lat.1.gz |\" ark:- | chain-get-supervision --lattice-input=true --frame-subsampling-factor=3 --right-tolerance=5 --left-tolerance=5 exp/chain_simple/tdnn1g/tree exp/chain_simple/tdnn1g/0.trans_mdl ark:- ark:-"
-
-TODO(karita): support consistent subsampling factor between chain-get-supervision and Config
-
-[optional]
---ivector: TODO(karita)
---normalization-fst: TODO(karita)
---srand: ??
---left-context=29:
---right-context=29:
---num-frames=140,100,160: ??
---frame-subsampling-factor=3:
---left-tolerance=5:
---right-tolerance=5:
  */
 
 #include <sstream>
@@ -554,6 +517,25 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def_readwrite("key", &TorchainExample::key) // std::vector<NnetIo>
         .def_readwrite("inputs", &TorchainExample::inputs) // std::vector<NnetIo>
         .def_readwrite("outputs", &TorchainExample::outputs); // std::vector<NnetChainSupervision>
+
+    py::class_<chain::Supervision>(m, "Supervision", "kaldi::chain::Supervision")
+        .def_readwrite("weight", &chain::Supervision::weight)
+        .def_readwrite("num_sequences", &chain::Supervision::num_sequences)
+        .def_readwrite("frames_per_sequence", &chain::Supervision::frames_per_sequence)
+        .def_readwrite("label_dim", &chain::Supervision::label_dim)
+        .def_readwrite("fst", &chain::Supervision::fst)
+        .def("__repr__",
+             [](const chain::Supervision &a) {
+                 std::stringstream ss;
+                 ss << "chain::Supervision(\n"
+                    << "  label_dim=" << a.label_dim << ",\n"
+                    << "  num_sequences=" << a.num_sequences << ",\n"
+                    << "  frames_per_sequence=" << a.frames_per_sequence << ",\n"
+                    << "  weight=" << a.weight << "\n)";
+                 return ss.str();
+             }
+            );
+
 
 
     py::class_<GetEgs>(m, "GetEgs", "class wrapped kaldi/src/chainbin/nnet3-chain-get-egs.cc")

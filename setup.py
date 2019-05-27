@@ -17,6 +17,7 @@ setup(
             name="torchain.egs",
             sources=["cxx/egs.cpp"],
             extra_compile_args=[
+                "-DHAVE_CUDA=1",
                 "-isystem" + KALDI_ROOT + "/src",
                 "-isystem" + KALDI_ROOT + "/tools/openfst/include",
             ],
@@ -31,6 +32,7 @@ setup(
             name="torchain.train",
             sources=["cxx/train.cpp"],
             extra_compile_args=[
+                "-DHAVE_CUDA=1",
                 "-isystem" + KALDI_ROOT + "/src",
                 "-isystem" + KALDI_ROOT + "/tools/openfst/include",
             ],
