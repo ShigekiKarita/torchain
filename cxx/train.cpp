@@ -7,7 +7,7 @@
 #include <THC/THC.h>
 
 // kaldi
-// #include "./cu-device-patched.h"
+#include "cu-device-patched.h"
 #include "chain/chain-training.h"
 
 #include "./tensor.hpp"
