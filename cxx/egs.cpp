@@ -24,6 +24,17 @@ using namespace kaldi;
 using namespace kaldi::nnet3;
 
 
+std::string supervison_to_string(const chain::Supervision &a) {
+    std::stringstream ss;
+    ss << "chain::Supervision(\n"
+       << "  label_dim=" << a.label_dim << ",\n"
+       << "  num_sequences=" << a.num_sequences << ",\n"
+       << "  frames_per_sequence=" << a.frames_per_sequence << ",\n"
+       << "  weight=" << a.weight << "\n)";
+    return ss.str();
+}
+
+
 struct TorchainExample
 {
     std::string key;
@@ -44,6 +55,24 @@ struct TorchainExample
         {
             this->inputs[i.name] = torchain::copy_tensor(i.features);
         }
+    }
+
+    std::string to_string() const {
+        std::stringstream ss;
+        ss << "TorchainExample(\n"
+           << "  key=" << key << "\n"
+           << "  inputs={";
+        for (const auto& i : this->inputs) {
+            ss << "'" << i.first << "': Tensor(shape=" << i.second.sizes() << "), ";
+        }
+        ss << "}\n";
+        ss << "  outputs={";
+        for (const auto& o : this->outputs) {
+            ss << "'" << o.first << "': " << supervison_to_string(o.second) << "), ";
+        }
+        ss << "}\n";
+        ss  << ")";
+        return ss.str();
     }
 };
 
@@ -261,12 +290,24 @@ static bool ProcessFile(const TransitionModel *trans_mdl,
 using Config = kaldi::nnet3::ExampleGenerationConfig;
 using Example = kaldi::nnet3::NnetChainExample;
 
+// http://kaldi-asr.org/doc/classkaldi_1_1SequentialTableReader.html
+struct SeqTensorGenerator : public kaldi::SequentialGeneralMatrixReader {
+    SeqTensorGenerator()
+        : kaldi::SequentialGeneralMatrixReader() {}
+
+    SeqTensorGenerator(const std::string& rspec)
+        : kaldi::SequentialGeneralMatrixReader(rspec) {}
+
+    torch::Tensor tensor() {
+        return torchain::copy_tensor(this->Value());
+    }
+};
+
 
 /// TODO(karita): add option not to log in nnet-example-utils.cc
 /// helper class derived from nnet3-chain-get-egs.cc
-class GetEgs
+struct GetEgs
 {
-private:
     const std::string feat_rspecifier, supervision_rspecifier,
         normalization_fst_rxfilename, online_ivector_rspecifier,
         deriv_weights_rspecifier,
@@ -284,8 +325,6 @@ private:
     // chunk setting
     Config eg_config;
     std::unique_ptr<kaldi::nnet3::UtteranceSplitter> utt_splitter;
-
-public:
 
     // options outside ExampleGenerationConfig
     // TODO(karita): bind this readwrite attr
@@ -408,7 +447,7 @@ public:
     std::vector<TorchainExample> load(const std::string& key, bool close=true)
     {
         std::vector<TorchainExample> dst;
-        this->open();
+        if (!this->is_open()) this->open();
 
         if (!feat_reader.HasKey(key))
         {
@@ -480,6 +519,12 @@ public:
     }
 };
 
+std::unique_ptr<chain::Supervision> merge_supervison(const std::vector<const chain::Supervision*> &input) {
+    auto ret = std::make_unique<chain::Supervision>();
+    chain::MergeSupervision(input, ret.get());
+    return ret;
+}
+
 
 // NOTE: these pybind11 symbols are imported from <torch/extension.h>
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -514,9 +559,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
     // TODO(karita): implement __repr__
     py::class_<TorchainExample>(m, "TorchainExample")
-        .def_readwrite("key", &TorchainExample::key) // std::vector<NnetIo>
-        .def_readwrite("inputs", &TorchainExample::inputs) // std::vector<NnetIo>
-        .def_readwrite("outputs", &TorchainExample::outputs); // std::vector<NnetChainSupervision>
+        .def_readwrite("key", &TorchainExample::key)
+        .def_readwrite("inputs", &TorchainExample::inputs)
+        .def_readwrite("outputs", &TorchainExample::outputs)
+        .def("__repr__", &TorchainExample::to_string);
 
     py::class_<chain::Supervision>(m, "Supervision", "kaldi::chain::Supervision")
         .def_readwrite("weight", &chain::Supervision::weight)
@@ -524,17 +570,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def_readwrite("frames_per_sequence", &chain::Supervision::frames_per_sequence)
         .def_readwrite("label_dim", &chain::Supervision::label_dim)
         .def_readwrite("fst", &chain::Supervision::fst)
-        .def("__repr__",
-             [](const chain::Supervision &a) {
-                 std::stringstream ss;
-                 ss << "chain::Supervision(\n"
-                    << "  label_dim=" << a.label_dim << ",\n"
-                    << "  num_sequences=" << a.num_sequences << ",\n"
-                    << "  frames_per_sequence=" << a.frames_per_sequence << ",\n"
-                    << "  weight=" << a.weight << "\n)";
-                 return ss.str();
-             }
-            );
+        .def("__repr__", &supervison_to_string);
 
     py::class_<fst::StdVectorFst>(m, "StdVectorFst", "fst::StdVectorFst")
         .def(py::init<>())
@@ -542,7 +578,18 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
     // m.def("read_stdfst", py::overload_cast<const std::string&>(&fst::StdVectorFst::Read));
 
-    py::class_<GetEgs>(m, "GetEgs", "class wrapped kaldi/src/chainbin/nnet3-chain-get-egs.cc")
+    py::class_<SeqTensorGenerator>(m, "SeqTensorGenerator")
+        .def(py::init<>())
+        .def(py::init<const std::string&>(), py::arg("rspecifier"))
+        .def("key", &SeqTensorGenerator::Key)
+        .def("tensor", &SeqTensorGenerator::tensor)
+        .def("next", &SeqTensorGenerator::Next)
+        .def("done", &SeqTensorGenerator::Done)
+        .def("open", &SeqTensorGenerator::Open)
+        .def("is_open", &SeqTensorGenerator::IsOpen)
+        .def("close", &SeqTensorGenerator::Close);
+
+    py::class_<GetEgs>(m, "_GetEgs", "class wrapped kaldi/src/chainbin/nnet3-chain-get-egs.cc")
         .def(py::init<const std::string&, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&>(),
              py::arg("feat"),
              py::arg("supervision"),
@@ -554,6 +601,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("load", &GetEgs::load,
              py::arg("uttid"), py::arg("close") = true)
         .def_property("config", &GetEgs::get_config, &GetEgs::set_config)
-        .def_property("config", &GetEgs::get_config, &GetEgs::set_config)
+        .def_readonly("rspec", &GetEgs::feat_rspecifier)
         .def("__repr__", &GetEgs::to_string);
+
+    m.def("merge_supervison", &merge_supervison);
 }
