@@ -536,7 +536,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
              }
             );
 
+    py::class_<fst::StdVectorFst>(m, "StdVectorFst", "fst::StdVectorFst")
+        .def(py::init<>())
+        .def("write", py::overload_cast<const std::string&>(&fst::StdVectorFst::Write, py::const_));
 
+    // m.def("read_stdfst", py::overload_cast<const std::string&>(&fst::StdVectorFst::Read));
 
     py::class_<GetEgs>(m, "GetEgs", "class wrapped kaldi/src/chainbin/nnet3-chain-get-egs.cc")
         .def(py::init<const std::string&, const std::string&, const std::string&, const std::string&, const std::string&, const std::string&>(),

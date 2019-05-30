@@ -17,9 +17,10 @@ setup(
             name="torchain.egs",
             sources=["cxx/egs.cpp"],
             extra_compile_args=[
-                "-DHAVE_CUDA=1",
+                "-DHAVE_CUDA=1", "-DKALDI_PARANOID",
                 "-isystem" + KALDI_ROOT + "/src",
                 "-isystem" + KALDI_ROOT + "/tools/openfst/include",
+                "-std=c++14"
             ],
             extra_link_args=[
                 "-L" + KALDI_ROOT + "/src/lib",
@@ -32,14 +33,15 @@ setup(
             name="torchain.train",
             sources=["cxx/train.cpp"],
             extra_compile_args=[
-                "-DHAVE_CUDA=1",
+                "-DHAVE_CUDA=1", "-DKALDI_PARANOID",
                 "-isystem" + KALDI_ROOT + "/src",
                 "-isystem" + KALDI_ROOT + "/tools/openfst/include",
             ],
             extra_link_args=[
                 "-L" + KALDI_ROOT + "/src/lib",
                 "-Wl,-rpath=" + KALDI_ROOT + "/src/lib",
-                "-lkaldi-chain", "-lkaldi-nnet3", "-lkaldi-util"
+                "-lkaldi-chain", "-lkaldi-nnet3", "-lkaldi-util",
+                "-std=c++14"
             ]
         ),
     ],

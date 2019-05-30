@@ -1,11 +1,13 @@
 #include <cmath>
+#include <memory>
+#include <thread>
 
 // third party
 #include <torch/extension.h>
 #include <THC/THC.h>
 
 // kaldi
-#include "./cu-device-patched.h"
+// #include "./cu-device-patched.h"
 #include "chain/chain-training.h"
 
 #include "./tensor.hpp"
@@ -34,7 +36,7 @@ void set_kaldi_device(torch::Tensor t) {
 }
 
 
-kaldi::chain::DenominatorGraph
+std::unique_ptr<kaldi::chain::DenominatorGraph>
 denominator_graph(
     const std::string& rxfilename,
     std::int64_t num_pdfs
@@ -42,7 +44,8 @@ denominator_graph(
 {
     fst::StdVectorFst den_fst;
     fst::ReadFstKaldi(rxfilename, &den_fst);
-    return kaldi::chain::DenominatorGraph(den_fst, num_pdfs);
+    return std::unique_ptr<kaldi::chain::DenominatorGraph>(
+        new kaldi::chain::DenominatorGraph(den_fst, num_pdfs));
 }
 
 struct TorchainResult
@@ -66,7 +69,7 @@ TorchainResult chain_loss(
 {
     TorchainResult result;
     cudaDeviceSynchronize();
-    set_kaldi_device(nnet_output_tensor);
+    // set_kaldi_device(nnet_output_tensor);
     auto nnet_output = torchain::make_cusubmatrix(nnet_output_tensor);
     auto nnet_output_deriv = torchain::make_cusubmatrix(nnet_output_deriv_tensor);
 
@@ -82,11 +85,30 @@ TorchainResult chain_loss(
     return result;
 }
 
+void test_torchain_tensor(torch::Tensor x)
+{
+    // std::thread t([&] {
+    //         kaldi::CuDevice::Instantiate().SelectGpuId("yes");
+    auto m = torchain::make_cusubmatrix(x);
+    m.SetZero();
+    //     });
+    // t.join();
+}
+
+void kaldi_cuda_init()
+{
+    kaldi::CuDevice::Instantiate().SelectGpuId("yes");
+}
+
 
 // NOTE: these pybind11 symbols are imported from <torch/extension.h>
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) 
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 {
     // TODO(karita): docstring
+    m.def("test_torchain_tensor", &test_torchain_tensor);
+    m.def("set_kaldi_device", &set_kaldi_device);
+
+    m.def("kaldi_cuda_init", &kaldi_cuda_init);
 
     py::class_<kaldi::chain::DenominatorGraph>(m, "DenominatorGraph", "kaldi::chain::DenominatorGraph")
         .def("num_states", &kaldi::chain::DenominatorGraph::NumStates)
